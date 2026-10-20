@@ -1,4 +1,4 @@
-# Maintainer: mdpkg contributors
+# Maintainer: mustd
 pkgname=mdpkg
 pkgver=0.1.0
 pkgrel=1
@@ -10,7 +10,7 @@ depends=('pacman' 'pamac-cli' 'sudo')
 optdepends=('npm: for global npm package management')
 makedepends=('cargo')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('7c47fca5179637a6af0f7becb0f59b539e01448c4a6afff6e5085ddbeaf0458f')
 
 build() {
   cd "$pkgname-$pkgver"

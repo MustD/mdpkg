@@ -19,8 +19,22 @@
 
 ### From AUR (Arch User Repository)
 
+[`mdpkg` is available on the AUR](https://aur.archlinux.org/packages/mdpkg):
+
 ```bash
+# Using pamac (Manjaro)
 pamac build mdpkg
+
+# Or using yay / paru
+yay -S mdpkg
+```
+
+### From GitHub Releases (Prebuilt Package)
+
+Download the prebuilt `.pkg.tar.zst` package from the [latest GitHub Release](https://github.com/MustD/mdpkg/releases/latest) and install with `pacman`:
+
+```bash
+sudo pacman -U https://github.com/MustD/mdpkg/releases/download/v0.1.0/mdpkg-0.1.0-1-x86_64.pkg.tar.zst
 ```
 
 ### From Source
@@ -156,6 +170,33 @@ Hooks receive environment variables:
 - `MDPKG_STAGE`
 - `MDPKG_HOST`
 - `MDPKG_DATA_DIR`
+
+---
+
+## AUR Packaging & Publishing
+
+The AUR package specification lives in [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD) and [`packaging/aur/.SRCINFO`](packaging/aur/.SRCINFO).
+
+To build and publish a new release to the AUR:
+
+```bash
+# 1. Tag and create the GitHub release so the source tarball URL is available
+gh release create v0.1.0 --title "v0.1.0" --generate-notes
+
+# 2. Update sha256sums in packaging/aur/PKGBUILD and regenerate .SRCINFO
+cd packaging/aur
+updpkgsums
+makepkg --printsrcinfo > .SRCINFO
+
+# 3. Verify package build and tests
+makepkg -sf
+
+# 4. Push PKGBUILD and .SRCINFO to the AUR repository
+git clone ssh://aur@aur.archlinux.org/mdpkg.git /tmp/aur-mdpkg
+cp PKGBUILD .SRCINFO /tmp/aur-mdpkg/
+git -C /tmp/aur-mdpkg commit -am "Update to v0.1.0-1"
+git -C /tmp/aur-mdpkg push origin master
+```
 
 ---
 

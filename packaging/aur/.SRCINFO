@@ -12,6 +12,6 @@ pkgbase = mdpkg
 	depends = sudo
 	optdepends = npm: for global npm package management
 	source = mdpkg-0.1.0.tar.gz::https://github.com/MustD/mdpkg/archive/v0.1.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = 7c47fca5179637a6af0f7becb0f59b539e01448c4a6afff6e5085ddbeaf0458f
 
 pkgname = mdpkg
