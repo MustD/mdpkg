@@ -21,7 +21,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `SEC-03` | Replace keep-alive busy-sleep loop with condition variable / channel | `src/privilege.rs` | Performance / Safety | P1 | `[x]` |
 | `SEC-04` | Streamline privilege session username lookup | `src/privilege.rs` | Robustness | P2 | `[x]` |
 | `SIM-01` | Deduplicate catalog/host reconciliation in commands | `src/commands.rs` | Simplification | P1 | `[x]` |
-| `SIM-02` | Implement standard Rust conversion traits (`Display`, `FromStr`) | `src/model.rs` | Idiomatic Rust | P2 | `[ ]` |
+| `SIM-02` | Implement standard Rust conversion traits (`Display`, `FromStr`) | `src/model.rs` | Idiomatic Rust | P2 | `[x]` |
 | `SIM-03` | Clean up path normalization and tilde expansion | `src/config.rs` | Simplification | P2 | `[ ]` |
 | `PERF-01` | Replace string-rendering diff with structural equality | `src/reconcile.rs` | Performance | P1 | `[ ]` |
 | `PERF-02` | Add fast-path prefix filters to avoid unnecessary Regex matching | `src/markdown.rs` | Performance | P1 | `[ ]` |
@@ -137,7 +137,7 @@ This document tracks all identified code-quality improvements, simplifications, 
   - Refactor handlers to use these unified helpers, reducing ~120-150 lines of duplicate code.
 - **Verification**: All integration tests in `tests/cli_integration.rs` pass without change.
 
-#### [ ] Task `SIM-02`: Implement standard Rust conversion traits for domain models
+#### [x] Task `SIM-02`: Implement standard Rust conversion traits for domain models
 - **Location**: `src/model.rs`
 - **Issue**:
   - `PackageSource::prefix_str(&self) -> &'static str`
