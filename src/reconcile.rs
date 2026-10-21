@@ -1,4 +1,3 @@
-use crate::markdown::render_document;
 use crate::model::{CategoryBlock, Document, PackageItem, PackageSource, SectionBlock};
 use std::collections::{HashMap, HashSet};
 
@@ -32,6 +31,41 @@ pub struct SyncPlan {
     pub skipped_installed_aur: Vec<String>,
 }
 
+pub fn is_structurally_equal(a: &Document, b: &Document) -> bool {
+    if a.title != b.title || a.preamble != b.preamble || a.sections.len() != b.sections.len() {
+        return false;
+    }
+    for (s_a, s_b) in a.sections.iter().zip(&b.sections) {
+        if s_a.name != s_b.name
+            || s_a.checked != s_b.checked
+            || s_a.description != s_b.description
+            || s_a.categories.len() != s_b.categories.len()
+        {
+            return false;
+        }
+        for (c_a, c_b) in s_a.categories.iter().zip(&s_b.categories) {
+            if c_a.name != c_b.name
+                || c_a.checked != c_b.checked
+                || c_a.notes != c_b.notes
+                || c_a.items.len() != c_b.items.len()
+            {
+                return false;
+            }
+            for (i_a, i_b) in c_a.items.iter().zip(&c_b.items) {
+                if i_a.name != i_b.name
+                    || i_a.checked != i_b.checked
+                    || i_a.source != i_b.source
+                    || i_a.explicit_m_prefix != i_b.explicit_m_prefix
+                    || i_a.description != i_b.description
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
 pub fn reconcile_catalog_to_host(
     catalog: &Document,
     existing_host: Option<&Document>,
@@ -39,11 +73,11 @@ pub fn reconcile_catalog_to_host(
 ) -> ReconcileResult {
     // Collect host section checkboxes
     let mut host_sections: HashMap<String, bool> = HashMap::new();
-    // Collect host category checkboxes: key (section_name, category_name)
+    // Collect host category checkboxes: key (section_name_lowercase, category_name_lowercase)
     let mut host_categories: HashMap<(String, Option<String>), bool> = HashMap::new();
-    // Collect host item checkboxes: key package_name -> checked
-    let mut host_items: HashMap<String, bool> = HashMap::new();
-    let mut host_packages: HashSet<String> = HashSet::new();
+    // Collect host item checkboxes: borrowed &str -> checked
+    let mut host_items: HashMap<&str, bool> = HashMap::new();
+    let mut host_packages: HashSet<&str> = HashSet::new();
 
     if let Some(host) = existing_host {
         for sec in &host.sections {
@@ -52,14 +86,14 @@ pub fn reconcile_catalog_to_host(
                 let cat_key = cat.name.as_ref().map(|n| n.to_lowercase());
                 host_categories.insert((sec.name.to_lowercase(), cat_key), cat.checked);
                 for item in &cat.items {
-                    host_items.insert(item.name.clone(), item.checked);
-                    host_packages.insert(item.name.clone());
+                    host_items.insert(item.name.as_str(), item.checked);
+                    host_packages.insert(item.name.as_str());
                 }
             }
         }
     }
 
-    let mut catalog_packages: HashSet<String> = HashSet::new();
+    let mut catalog_packages: HashSet<&str> = HashSet::new();
     let mut newly_added: Vec<(String, PackageSource, bool)> = Vec::new();
 
     let mut reconciled_sections: Vec<SectionBlock> = Vec::new();
@@ -77,16 +111,14 @@ pub fn reconcile_catalog_to_host(
                 .copied()
                 .unwrap_or(cat.checked);
 
-            let mut reconciled_items: Vec<PackageItem> = Vec::new();
+            let mut reconciled_items: Vec<PackageItem> = Vec::with_capacity(cat.items.len());
 
             for item in &cat.items {
-                catalog_packages.insert(item.name.clone());
+                catalog_packages.insert(item.name.as_str());
 
-                let (item_checked, is_new) = if let Some(&checked) = host_items.get(&item.name) {
-                    (checked, false)
-                } else {
-                    let default_checked = installed.is_installed(item.source, &item.name);
-                    (default_checked, true)
+                let (item_checked, is_new) = match host_items.get(item.name.as_str()) {
+                    Some(&checked) => (checked, false),
+                    None => (installed.is_installed(item.source, &item.name), true),
                 };
 
                 if is_new {
@@ -123,9 +155,9 @@ pub fn reconcile_catalog_to_host(
 
     // Determine packages present in host but removed from catalog
     let mut removed_from_catalog: Vec<String> = Vec::new();
-    for pkg in &host_packages {
+    for &pkg in &host_packages {
         if !catalog_packages.contains(pkg) {
-            removed_from_catalog.push(pkg.clone());
+            removed_from_catalog.push(pkg.to_string());
         }
     }
     removed_from_catalog.sort();
@@ -138,7 +170,7 @@ pub fn reconcile_catalog_to_host(
 
     let structure_changed = match existing_host {
         None => true,
-        Some(host) => render_document(&host_doc) != render_document(host),
+        Some(host) => !is_structurally_equal(&host_doc, host),
     };
 
     ReconcileResult {
@@ -159,9 +191,9 @@ pub fn compute_sync_plan(
     let mut to_remove: Vec<PackageItem> = Vec::new();
     let mut skipped_installed_aur: Vec<String> = Vec::new();
 
-    let mut seen_install: HashSet<String> = HashSet::new();
-    let mut seen_remove: HashSet<String> = HashSet::new();
-    let mut seen_skipped_aur: HashSet<String> = HashSet::new();
+    let mut seen_install: HashSet<&str> = HashSet::new();
+    let mut seen_remove: HashSet<&str> = HashSet::new();
+    let mut seen_skipped_aur: HashSet<&str> = HashSet::new();
 
     if let Some(req_secs) = requested_sections {
         if !req_secs.is_empty() {
@@ -202,22 +234,20 @@ pub fn compute_sync_plan(
 
                 if effective_enabled {
                     if !is_inst {
-                        if seen_install.insert(item.name.clone()) {
+                        if seen_install.insert(item.name.as_str()) {
                             to_install.push(item.clone());
                         }
                     } else if item.source == PackageSource::Aur {
                         if force_aur {
-                            if seen_install.insert(item.name.clone()) {
+                            if seen_install.insert(item.name.as_str()) {
                                 to_install.push(item.clone());
                             }
-                        } else if seen_skipped_aur.insert(item.name.clone()) {
+                        } else if seen_skipped_aur.insert(item.name.as_str()) {
                             skipped_installed_aur.push(item.name.clone());
                         }
                     }
-                } else if is_inst {
-                    if seen_remove.insert(item.name.clone()) {
-                        to_remove.push(item.clone());
-                    }
+                } else if is_inst && seen_remove.insert(item.name.as_str()) {
+                    to_remove.push(item.clone());
                 }
             }
         }
@@ -287,12 +317,55 @@ mod tests {
         };
 
         let plan = compute_sync_plan(&host, None, &installed, false).unwrap();
-        assert_eq!(plan.to_install.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["fd"]);
-        assert_eq!(plan.to_remove.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["git"]);
+        assert_eq!(
+            plan.to_install
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["fd"]
+        );
+        assert_eq!(
+            plan.to_remove
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["git"]
+        );
         assert_eq!(plan.skipped_installed_aur, vec!["insync".to_string()]);
 
         // Item checkbox inside disabled category remains [x] when rendered back
         let rendered = render_document(&host);
         assert!(rendered.contains("### [ ] disabled-cat\n- [x] `git` — vcs"));
+    }
+
+    #[test]
+    fn test_structure_changed_when_host_differs() {
+        let catalog_md = "## [x] MAIN\n### [x] cat\n- [x] `git`\n";
+        let (catalog, _) = parse_document(Path::new("packages.md"), catalog_md);
+        let (host, _) = parse_document(Path::new("host.md"), catalog_md);
+        let installed = InstalledPackages::default();
+
+        let res_same = reconcile_catalog_to_host(&catalog, Some(&host), &installed);
+        assert!(!res_same.structure_changed);
+
+        let catalog_diff_md = "## [x] MAIN\n### [x] cat\n- [x] `git`\n- [x] `curl`\n";
+        let (catalog_diff, _) = parse_document(Path::new("packages.md"), catalog_diff_md);
+        let res_diff = reconcile_catalog_to_host(&catalog_diff, Some(&host), &installed);
+        assert!(res_diff.structure_changed);
+    }
+
+    #[test]
+    fn test_structure_changed_ignores_line_numbers() {
+        let catalog_md = "## [x] MAIN\n\n\n### [x] cat\n- [x] `git`\n";
+        let host_md = "## [x] MAIN\n### [x] cat\n- [x] `git`\n";
+        let (catalog, _) = parse_document(Path::new("packages.md"), catalog_md);
+        let (host, _) = parse_document(Path::new("host.md"), host_md);
+        let installed = InstalledPackages::default();
+
+        let res = reconcile_catalog_to_host(&catalog, Some(&host), &installed);
+        assert!(
+            !res.structure_changed,
+            "structure_changed must be false when content matches even if line numbers differ"
+        );
     }
 }

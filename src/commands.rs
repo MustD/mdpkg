@@ -1,19 +1,19 @@
 use crate::cli::{
-    AddArgs, CheckArgs, Cli, CliPackageSource, Commands, CompletionsArgs, ConfigCommand,
-    ConfigSubcommand, DisableArgs, HooksCommand, HooksSubcommand, ListArgs, PackageTargetArgs,
-    RemoveArgs, SyncArgs, UpdateArgs, render_ai_help,
+    render_ai_help, AddArgs, CheckArgs, Cli, CliPackageSource, Commands, CompletionsArgs,
+    ConfigCommand, ConfigSubcommand, DisableArgs, HooksCommand, HooksSubcommand, ListArgs,
+    PackageTargetArgs, RemoveArgs, SyncArgs, UpdateArgs,
 };
-use clap::CommandFactory;
-use clap_complete::{Shell, generate};
-use crate::config::{ResolvedPaths, resolve_paths, save_data_dir};
+use crate::config::{resolve_paths, save_data_dir, ResolvedPaths};
 use crate::hooks::{discover_hooks, init_hooks_dir, run_hook, validate_hooks};
 use crate::markdown::{
     insert_package_item, parse_document, remove_package_item, render_document, set_package_checked,
     validate_document,
 };
-use crate::model::{HookStage, PackageItem, PackageSource};
-use crate::reconcile::{compute_sync_plan, reconcile_catalog_to_host};
-use crate::sources::{SystemBackend, execute_sync_plan};
+use crate::model::{Document, HookStage, PackageItem, PackageSource};
+use crate::reconcile::{compute_sync_plan, reconcile_catalog_to_host, InstalledPackages};
+use crate::sources::{execute_sync_plan, SystemBackend};
+use clap::CommandFactory;
+use clap_complete::{generate, Shell};
 use dialoguer::{Input, Select};
 use std::collections::HashSet;
 use std::env;
@@ -149,7 +149,12 @@ fn handle_hooks(cmd: HooksCommand, paths: &ResolvedPaths) -> Result<(), anyhow::
             } else {
                 println!("Discovered lifecycle hooks ({}):", hooks.len());
                 for h in hooks {
-                    println!("  - {:<12} {:<20} -> {}", h.stage.as_str(), h.package, h.path.display());
+                    println!(
+                        "  - {:<12} {:<20} -> {}",
+                        h.stage.as_str(),
+                        h.package,
+                        h.path.display()
+                    );
                 }
             }
             Ok(())
@@ -161,7 +166,13 @@ fn handle_hooks(cmd: HooksCommand, paths: &ResolvedPaths) -> Result<(), anyhow::
             let hook = hooks
                 .iter()
                 .find(|h| h.package == package && h.stage == hook_stage)
-                .ok_or_else(|| anyhow::anyhow!("No hook found for package '{}' and stage '{}'", package, stage))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No hook found for package '{}' and stage '{}'",
+                        package,
+                        stage
+                    )
+                })?;
 
             let dummy_item = PackageItem {
                 checked: true,
@@ -269,7 +280,10 @@ fn handle_check(
 
     if !recon.newly_added.is_empty() {
         pending_drift = true;
-        println!("New packages in catalog not yet saved to {}:", paths.host_path.file_name().unwrap().to_string_lossy());
+        println!(
+            "New packages in catalog not yet saved to {}:",
+            paths.host_path.file_name().unwrap().to_string_lossy()
+        );
         for (pkg, src, chk) in &recon.newly_added {
             let state = if *chk { "enabled [x]" } else { "disabled [ ]" };
             println!("  - {} ({:?}) -> default {}", pkg, src, state);
@@ -278,7 +292,10 @@ fn handle_check(
 
     if !recon.removed_from_catalog.is_empty() {
         pending_drift = true;
-        println!("Packages in host file removed from master catalog: {}", recon.removed_from_catalog.join(", "));
+        println!(
+            "Packages in host file removed from master catalog: {}",
+            recon.removed_from_catalog.join(", ")
+        );
     }
 
     if !plan.to_install.is_empty() {
@@ -306,16 +323,23 @@ fn handle_check(
     Ok(())
 }
 
-fn handle_sync(
-    args: SyncArgs,
+struct HostContext {
+    catalog_doc: Document,
+    installed: InstalledPackages,
+    host_doc: Document,
+    structure_changed: bool,
+}
+
+fn load_host_context(
     paths: &ResolvedPaths,
-    backend: &mut dyn SystemBackend,
-) -> Result<(), anyhow::Error> {
+    backend: &dyn SystemBackend,
+    strict_catalog: bool,
+) -> Result<HostContext, anyhow::Error> {
     ensure_catalog_exists(paths)?;
 
     let catalog_content = fs::read_to_string(&paths.catalog_path)?;
     let (catalog_doc, issues) = parse_document(&paths.catalog_path, &catalog_content);
-    if !issues.is_empty() {
+    if strict_catalog && !issues.is_empty() {
         anyhow::bail!("Catalog file has syntax errors; run `mdpkg check`");
     }
 
@@ -330,23 +354,48 @@ fn handle_sync(
 
     let recon = reconcile_catalog_to_host(&catalog_doc, host_doc.as_ref(), &installed);
 
+    Ok(HostContext {
+        catalog_doc,
+        installed,
+        host_doc: recon.host_doc,
+        structure_changed: recon.structure_changed,
+    })
+}
+
+fn save_host_document(paths: &ResolvedPaths, doc: &Document) -> Result<(), anyhow::Error> {
+    let rendered = render_document(doc);
+    fs::write(&paths.host_path, rendered)?;
+    Ok(())
+}
+
+fn handle_sync(
+    args: SyncArgs,
+    paths: &ResolvedPaths,
+    backend: &mut dyn SystemBackend,
+) -> Result<(), anyhow::Error> {
+    let ctx = load_host_context(paths, backend, true)?;
+
     let requested_sections = if args.sections.is_empty() {
         None
     } else {
         Some(args.sections.as_slice())
     };
 
-    let plan = compute_sync_plan(&recon.host_doc, requested_sections, &installed, args.force_aur)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let plan = compute_sync_plan(
+        &ctx.host_doc,
+        requested_sections,
+        &ctx.installed,
+        args.force_aur,
+    )
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    if plan.to_install.is_empty() && plan.to_remove.is_empty() && !recon.structure_changed {
+    if plan.to_install.is_empty() && plan.to_remove.is_empty() && !ctx.structure_changed {
         println!("Everything is up to date. No changes needed.");
         return Ok(());
     }
 
     if !args.dry_run {
-        let rendered = render_document(&recon.host_doc);
-        fs::write(&paths.host_path, rendered)?;
+        save_host_document(paths, &ctx.host_doc)?;
 
         if !plan.to_install.is_empty() || !plan.to_remove.is_empty() {
             backend.ensure_elevated()?;
@@ -377,10 +426,7 @@ fn handle_add(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    ensure_catalog_exists(paths)?;
-
-    let catalog_content = fs::read_to_string(&paths.catalog_path)?;
-    let (mut catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
+    let mut ctx = load_host_context(paths, backend, false)?;
 
     // Resolve source
     let source = if let Some(src) = args.source {
@@ -390,7 +436,11 @@ fn handle_add(
             CliPackageSource::Npm => PackageSource::Npm,
         }
     } else if atty_check() {
-        let selections = &["1. Manjaro Repository (default)", "2. AUR (a:)", "3. Global npm (n:)"];
+        let selections = &[
+            "1. Manjaro Repository (default)",
+            "2. AUR (a:)",
+            "3. Global npm (n:)",
+        ];
         let idx = Select::new()
             .with_prompt("Select package source")
             .items(selections)
@@ -408,7 +458,7 @@ fn handle_add(
     // Resolve section
     let section = if let Some(sec) = args.section {
         sec
-    } else if let Some(first_sec) = catalog_doc.sections.first() {
+    } else if let Some(first_sec) = ctx.catalog_doc.sections.first() {
         first_sec.name.clone()
     } else {
         "MAIN".to_string()
@@ -417,8 +467,16 @@ fn handle_add(
     // Resolve category
     let category = if let Some(cat) = args.category {
         cat
-    } else if let Some(sec) = catalog_doc.sections.iter().find(|s| s.name.eq_ignore_ascii_case(&section)) {
-        sec.categories.first().and_then(|c| c.name.clone()).unwrap_or_else(|| "general".to_string())
+    } else if let Some(sec) = ctx
+        .catalog_doc
+        .sections
+        .iter()
+        .find(|s| s.name.eq_ignore_ascii_case(&section))
+    {
+        sec.categories
+            .first()
+            .and_then(|c| c.name.clone())
+            .unwrap_or_else(|| "general".to_string())
     } else {
         "general".to_string()
     };
@@ -448,7 +506,10 @@ fn handle_add(
     if !args.no_install {
         backend.ensure_elevated()?;
         let hooks = discover_hooks(&paths.hooks_dir).unwrap_or_default();
-        if let Some(h) = hooks.iter().find(|h| h.package == item.name && h.stage == HookStage::PreInstall) {
+        if let Some(h) = hooks
+            .iter()
+            .find(|h| h.package == item.name && h.stage == HookStage::PreInstall)
+        {
             run_hook(h, &item, &paths.host_name, &paths.data_dir)?;
         }
 
@@ -459,37 +520,41 @@ fn handle_add(
             PackageSource::Npm => backend.install_npm(&pkg_list, false)?,
         }
 
-        if let Some(h) = hooks.iter().find(|h| h.package == item.name && h.stage == HookStage::PostInstall) {
+        if let Some(h) = hooks
+            .iter()
+            .find(|h| h.package == item.name && h.stage == HookStage::PostInstall)
+        {
             run_hook(h, &item, &paths.host_name, &paths.data_dir)?;
         }
     }
 
     // Insert into master catalog if not already present
-    let already_in_catalog = catalog_doc
-        .sections
-        .iter()
-        .any(|s| s.categories.iter().any(|c| c.items.iter().any(|i| i.name == args.package)));
+    let already_in_catalog = ctx.catalog_doc.sections.iter().any(|s| {
+        s.categories
+            .iter()
+            .any(|c| c.items.iter().any(|i| i.name == args.package))
+    });
 
     if !already_in_catalog {
-        insert_package_item(&mut catalog_doc, &section, &category, item);
-        fs::write(&paths.catalog_path, render_document(&catalog_doc))?;
+        insert_package_item(&mut ctx.catalog_doc, &section, &category, item);
+        fs::write(&paths.catalog_path, render_document(&ctx.catalog_doc))?;
     } else {
-        println!("Package '{}' already in master catalog. Updating host state.", args.package);
+        println!(
+            "Package '{}' already in master catalog. Updating host state.",
+            args.package
+        );
     }
 
     // Update host file
-    let installed = backend.query_installed()?;
-    let host_doc = if paths.host_path.exists() {
-        let content = fs::read_to_string(&paths.host_path)?;
-        Some(parse_document(&paths.host_path, &content).0)
-    } else {
-        None
-    };
-    let mut recon = reconcile_catalog_to_host(&catalog_doc, host_doc.as_ref(), &installed);
+    let mut recon =
+        reconcile_catalog_to_host(&ctx.catalog_doc, Some(&ctx.host_doc), &ctx.installed);
     set_package_checked(&mut recon.host_doc, &args.package, true);
-    fs::write(&paths.host_path, render_document(&recon.host_doc))?;
+    save_host_document(paths, &recon.host_doc)?;
 
-    println!("Package '{}' added and enabled on {}.", args.package, paths.host_name);
+    println!(
+        "Package '{}' added and enabled on {}.",
+        args.package, paths.host_name
+    );
     Ok(())
 }
 
@@ -498,30 +563,22 @@ fn handle_enable(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    ensure_catalog_exists(paths)?;
+    let mut ctx = load_host_context(paths, backend, false)?;
 
-    let catalog_content = fs::read_to_string(&paths.catalog_path)?;
-    let (catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
-
-    let installed = backend.query_installed()?;
-    let host_doc = if paths.host_path.exists() {
-        let content = fs::read_to_string(&paths.host_path)?;
-        Some(parse_document(&paths.host_path, &content).0)
-    } else {
-        None
-    };
-
-    let mut recon = reconcile_catalog_to_host(&catalog_doc, host_doc.as_ref(), &installed);
-    if !set_package_checked(&mut recon.host_doc, &args.package, true) {
+    if !set_package_checked(&mut ctx.host_doc, &args.package, true) {
         anyhow::bail!("Package '{}' not found in catalog", args.package);
     }
 
-    fs::write(&paths.host_path, render_document(&recon.host_doc))?;
+    save_host_document(paths, &ctx.host_doc)?;
 
     // Install if not already installed
-    let plan = compute_sync_plan(&recon.host_doc, None, &installed, false)
+    let plan = compute_sync_plan(&ctx.host_doc, None, &ctx.installed, false)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let to_install: Vec<PackageItem> = plan.to_install.into_iter().filter(|p| p.name == args.package).collect();
+    let to_install: Vec<PackageItem> = plan
+        .to_install
+        .into_iter()
+        .filter(|p| p.name == args.package)
+        .collect();
 
     if !to_install.is_empty() {
         backend.ensure_elevated()?;
@@ -530,7 +587,15 @@ fn handle_enable(
             to_remove: Vec::new(),
             skipped_installed_aur: Vec::new(),
         };
-        execute_sync_plan(&sub_plan, &paths.hooks_dir, &paths.host_name, &paths.data_dir, backend, true, false)?;
+        execute_sync_plan(
+            &sub_plan,
+            &paths.hooks_dir,
+            &paths.host_name,
+            &paths.data_dir,
+            backend,
+            true,
+            false,
+        )?;
     }
 
     println!("Enabled '{}' on {}.", args.package, paths.host_name);
@@ -542,30 +607,22 @@ fn handle_disable(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    ensure_catalog_exists(paths)?;
+    let mut ctx = load_host_context(paths, backend, false)?;
 
-    let catalog_content = fs::read_to_string(&paths.catalog_path)?;
-    let (catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
-
-    let installed = backend.query_installed()?;
-    let host_doc = if paths.host_path.exists() {
-        let content = fs::read_to_string(&paths.host_path)?;
-        Some(parse_document(&paths.host_path, &content).0)
-    } else {
-        None
-    };
-
-    let mut recon = reconcile_catalog_to_host(&catalog_doc, host_doc.as_ref(), &installed);
-    if !set_package_checked(&mut recon.host_doc, &args.package, false) {
+    if !set_package_checked(&mut ctx.host_doc, &args.package, false) {
         anyhow::bail!("Package '{}' not found in catalog", args.package);
     }
 
-    fs::write(&paths.host_path, render_document(&recon.host_doc))?;
+    save_host_document(paths, &ctx.host_doc)?;
 
     // Uninstall if currently installed
-    let plan = compute_sync_plan(&recon.host_doc, None, &installed, false)
+    let plan = compute_sync_plan(&ctx.host_doc, None, &ctx.installed, false)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let to_remove: Vec<PackageItem> = plan.to_remove.into_iter().filter(|p| p.name == args.package).collect();
+    let to_remove: Vec<PackageItem> = plan
+        .to_remove
+        .into_iter()
+        .filter(|p| p.name == args.package)
+        .collect();
 
     if !to_remove.is_empty() {
         backend.ensure_elevated()?;
@@ -574,7 +631,15 @@ fn handle_disable(
             to_remove,
             skipped_installed_aur: Vec::new(),
         };
-        execute_sync_plan(&sub_plan, &paths.hooks_dir, &paths.host_name, &paths.data_dir, backend, args.no_confirm, false)?;
+        execute_sync_plan(
+            &sub_plan,
+            &paths.hooks_dir,
+            &paths.host_name,
+            &paths.data_dir,
+            backend,
+            args.no_confirm,
+            false,
+        )?;
     }
 
     println!("Disabled '{}' on {}.", args.package, paths.host_name);
@@ -600,7 +665,11 @@ fn handle_remove(
         let (mut catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
         if remove_package_item(&mut catalog_doc, &args.package) {
             fs::write(&paths.catalog_path, render_document(&catalog_doc))?;
-            println!("Purged '{}' from catalog {}.", args.package, paths.catalog_path.display());
+            println!(
+                "Purged '{}' from catalog {}.",
+                args.package,
+                paths.catalog_path.display()
+            );
         }
     }
 
@@ -612,23 +681,10 @@ fn handle_list(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    ensure_catalog_exists(paths)?;
-
-    let catalog_content = fs::read_to_string(&paths.catalog_path)?;
-    let (catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
-    let installed = backend.query_installed()?;
-
-    let host_doc = if paths.host_path.exists() {
-        let content = fs::read_to_string(&paths.host_path)?;
-        Some(parse_document(&paths.host_path, &content).0)
-    } else {
-        None
-    };
-
-    let recon = reconcile_catalog_to_host(&catalog_doc, host_doc.as_ref(), &installed);
+    let ctx = load_host_context(paths, backend, false)?;
     let hooks = discover_hooks(&paths.hooks_dir).unwrap_or_default();
 
-    for sec in &recon.host_doc.sections {
+    for sec in &ctx.host_doc.sections {
         let sec_chk = if sec.checked { "[x]" } else { "[ ]" };
         println!("{} Section: {}", sec_chk, sec.name);
         if args.sections {
@@ -641,8 +697,12 @@ fn handle_list(
             println!("  {} Category: {}", cat_chk, cat_title);
 
             for item in &cat.items {
-                let is_inst = installed.is_installed(item.source, &item.name);
-                let inst_marker = if is_inst { "(installed)" } else { "(not installed)" };
+                let is_inst = ctx.installed.is_installed(item.source, &item.name);
+                let inst_marker = if is_inst {
+                    "(installed)"
+                } else {
+                    "(not installed)"
+                };
                 let chk = if item.checked { "[x]" } else { "[ ]" };
                 let src_prefix = match item.source {
                     PackageSource::Repo => "repo",

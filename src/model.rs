@@ -31,6 +31,12 @@ impl PackageSource {
     }
 }
 
+impl std::fmt::Display for PackageSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.prefix_str())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackageItem {
     pub checked: bool,
@@ -99,6 +105,60 @@ impl HookStage {
             "postRemoval" => Some(HookStage::PostRemoval),
             _ => None,
         }
+    }
+}
+
+impl std::fmt::Display for HookStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseHookStageError(pub String);
+
+impl std::fmt::Display for ParseHookStageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown hook stage: '{}'", self.0)
+    }
+}
+
+impl std::error::Error for ParseHookStageError {}
+
+impl std::str::FromStr for HookStage {
+    type Err = ParseHookStageError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_stage_str(s).ok_or_else(|| ParseHookStageError(s.to_string()))
+    }
+}
+
+impl TryFrom<&str> for HookStage {
+    type Error = ParseHookStageError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_display_and_from_str() {
+        assert_eq!(PackageSource::Aur.to_string(), "a:");
+        assert_eq!(PackageSource::Repo.to_string(), "");
+        assert_eq!(PackageSource::Npm.to_string(), "n:");
+
+        assert_eq!(HookStage::PreInstall.to_string(), "preInstall");
+        assert_eq!(
+            HookStage::from_str("postInstall"),
+            Ok(HookStage::PostInstall)
+        );
+        assert_eq!(HookStage::try_from("preRemoval"), Ok(HookStage::PreRemoval));
+        assert!(HookStage::from_str("invalid").is_err());
     }
 }
 

@@ -177,8 +177,13 @@ pub fn validate_hooks(
 }
 
 pub fn resolve_hook_invocation(script: &HookScript) -> Result<(String, Vec<String>), String> {
-    let meta = fs::metadata(&script.path)
-        .map_err(|e| format!("Cannot read metadata for hook {}: {}", script.path.display(), e))?;
+    let meta = fs::metadata(&script.path).map_err(|e| {
+        format!(
+            "Cannot read metadata for hook {}: {}",
+            script.path.display(),
+            e
+        )
+    })?;
     let is_exec = meta.permissions().mode() & 0o111 != 0;
 
     let path_str = script.path.to_string_lossy().to_string();
@@ -186,7 +191,11 @@ pub fn resolve_hook_invocation(script: &HookScript) -> Result<(String, Vec<Strin
     if is_exec {
         Ok((path_str, Vec::new()))
     } else {
-        let ext = script.path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        let ext = script
+            .path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
         match ext {
             "sh" => Ok(("bash".to_string(), vec![path_str])),
             "py" => Ok(("python3".to_string(), vec![path_str])),
@@ -204,8 +213,7 @@ pub fn run_hook(
     host: &str,
     data_dir: &Path,
 ) -> Result<(), anyhow::Error> {
-    let (prog, args) = resolve_hook_invocation(script)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let (prog, args) = resolve_hook_invocation(script).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     let source_str = match pkg.source {
         crate::model::PackageSource::Repo => "repo",
@@ -223,7 +231,11 @@ pub fn run_hook(
         .status()?;
 
     if !status.success() {
-        anyhow::bail!("Hook '{}' exited with status: {}", script.path.display(), status);
+        anyhow::bail!(
+            "Hook '{}' exited with status: {}",
+            script.path.display(),
+            status
+        );
     }
 
     Ok(())
@@ -240,10 +252,16 @@ mod tests {
     #[test]
     fn test_parse_hook_filename_with_dots_in_package_name() {
         let parsed = parse_hook_filename("dotnet-sdk-8.0_postInstall.sh");
-        assert_eq!(parsed, Some(("dotnet-sdk-8.0".to_string(), HookStage::PostInstall)));
+        assert_eq!(
+            parsed,
+            Some(("dotnet-sdk-8.0".to_string(), HookStage::PostInstall))
+        );
 
         let parsed_no_ext = parse_hook_filename("lib32-glibc-2.38_preInstall");
-        assert_eq!(parsed_no_ext, Some(("lib32-glibc-2.38".to_string(), HookStage::PreInstall)));
+        assert_eq!(
+            parsed_no_ext,
+            Some(("lib32-glibc-2.38".to_string(), HookStage::PreInstall))
+        );
     }
 
     #[test]

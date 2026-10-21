@@ -1,4 +1,6 @@
-use crate::model::{CategoryBlock, Document, PackageItem, PackageSource, SectionBlock, ValidationIssue};
+use crate::model::{
+    CategoryBlock, Document, PackageItem, PackageSource, SectionBlock, ValidationIssue,
+};
 use regex::Regex;
 use std::collections::HashSet;
 use std::path::Path;
@@ -40,7 +42,7 @@ fn item_regex() -> &'static Regex {
 
 fn potential_item_regex() -> &'static Regex {
     RE_POTENTIAL_ITEM.get_or_init(|| {
-        // Any bullet line starting with - [x], - [ ], or just - 
+        // Any bullet line starting with - [x], - [ ], or just -
         Regex::new(r#"^\s*-\s*(?:\[[ xX]\]\s*)?.*"#).unwrap()
     })
 }
@@ -51,7 +53,10 @@ fn flush_category(
 ) {
     if let Some(cat) = current_category.take() {
         if let Some(sec) = current_section {
-            if cat.name.is_some() || !cat.items.is_empty() || cat.notes.iter().any(|n| !n.trim().is_empty()) {
+            if cat.name.is_some()
+                || !cat.items.is_empty()
+                || cat.notes.iter().any(|n| !n.trim().is_empty())
+            {
                 sec.categories.push(cat);
             }
         }
@@ -81,11 +86,14 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
         let trimmed = line.trim();
 
         // Check for document title: # Title (only if at the top level outside sections)
-        if trimmed.starts_with("# ") && !trimmed.starts_with("## ") && !trimmed.starts_with("### ") {
-            if doc.title.is_none() && current_section.is_none() {
-                doc.title = Some(trimmed[2..].trim().to_string());
-                continue;
-            }
+        if trimmed.starts_with("# ")
+            && !trimmed.starts_with("## ")
+            && !trimmed.starts_with("### ")
+            && doc.title.is_none()
+            && current_section.is_none()
+        {
+            doc.title = Some(trimmed[2..].trim().to_string());
+            continue;
         }
 
         // Check for Category: ### ... (check ### before ## because ### starts with ##)
@@ -103,8 +111,13 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
             flush_category(&mut current_category, &mut current_section);
 
             if let Some(caps) = cat_re.captures(trimmed) {
-                let checked = caps.get(1).map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
-                let name = caps.get(2).map(|m| m.as_str().trim().to_string()).filter(|s| !s.is_empty());
+                let checked = caps
+                    .get(1)
+                    .map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
+                let name = caps
+                    .get(2)
+                    .map(|m| m.as_str().trim().to_string())
+                    .filter(|s| !s.is_empty());
 
                 current_category = Some(CategoryBlock {
                     name,
@@ -134,7 +147,9 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
             }
 
             if let Some(caps) = sec_re.captures(trimmed) {
-                let checked = caps.get(1).map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
+                let checked = caps
+                    .get(1)
+                    .map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
                 let name = caps.get(2).map_or("", |m| m.as_str()).trim().to_string();
                 let desc = caps.get(3).map_or("", |m| m.as_str()).trim().to_string();
 
@@ -155,8 +170,8 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
             continue;
         }
 
-        // Check if line might be an item
-        if pot_re.is_match(trimmed) {
+        // Check if line might be an item (fast-path filter avoids regex if line does not start with '-')
+        if trimmed.starts_with('-') && pot_re.is_match(trimmed) {
             // Check if before section
             if current_section.is_none() {
                 issues.push(ValidationIssue {
@@ -169,7 +184,9 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
 
             // Try parsing as package item
             if let Some(caps) = item_re.captures(trimmed) {
-                let checked = caps.get(1).map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
+                let checked = caps
+                    .get(1)
+                    .map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
                 let prefix = caps.get(2).map(|m| m.as_str());
                 let legacy_aur = caps.get(3).is_some();
                 let pkg_name = caps.get(4).unwrap().as_str().trim().to_string();
@@ -188,7 +205,8 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
                     }
                 };
 
-                let explicit_m_prefix = matches!(prefix, Some("m") | Some("manjaro") | Some("repo"));
+                let explicit_m_prefix =
+                    matches!(prefix, Some("m") | Some("manjaro") | Some("repo"));
 
                 if !seen_packages.insert(pkg_name.clone()) {
                     issues.push(ValidationIssue {
@@ -247,7 +265,11 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
                         items: Vec::new(),
                     });
                 }
-                current_category.as_mut().unwrap().notes.push(line.to_string());
+                current_category
+                    .as_mut()
+                    .unwrap()
+                    .notes
+                    .push(line.to_string());
             }
         }
     }
@@ -267,10 +289,28 @@ pub fn validate_document(path: &Path, content: &str) -> Vec<ValidationIssue> {
 }
 
 pub fn render_document(doc: &Document) -> String {
-    let mut out = String::new();
+    use std::fmt::Write;
+
+    let hint = doc.preamble.iter().map(|l| l.len() + 1).sum::<usize>()
+        + doc.sections.len() * 64
+        + doc
+            .sections
+            .iter()
+            .map(|s| {
+                s.categories.len() * 32
+                    + s.categories
+                        .iter()
+                        .map(|c| {
+                            c.items.len() * 48 + c.notes.iter().map(|n| n.len() + 1).sum::<usize>()
+                        })
+                        .sum::<usize>()
+            })
+            .sum::<usize>()
+        + 128;
+    let mut out = String::with_capacity(hint);
 
     if let Some(title) = &doc.title {
-        out.push_str(&format!("# {}\n\n", title));
+        let _ = write!(out, "# {}\n\n", title);
     }
 
     for line in &doc.preamble {
@@ -279,28 +319,29 @@ pub fn render_document(doc: &Document) -> String {
     }
 
     for (s_idx, section) in doc.sections.iter().enumerate() {
-        if s_idx > 0 || !doc.preamble.is_empty() || doc.title.is_some() {
-            if !out.ends_with("\n\n") && !out.is_empty() {
-                if out.ends_with('\n') {
-                    out.push('\n');
-                } else {
-                    out.push_str("\n\n");
-                }
+        if (s_idx > 0 || !doc.preamble.is_empty() || doc.title.is_some())
+            && !out.ends_with("\n\n")
+            && !out.is_empty()
+        {
+            if out.ends_with('\n') {
+                out.push('\n');
+            } else {
+                out.push_str("\n\n");
             }
         }
 
         let chk = if section.checked { "[x]" } else { "[ ]" };
         if section.description.is_empty() {
-            out.push_str(&format!("## {} {}\n", chk, section.name));
+            let _ = writeln!(out, "## {} {}", chk, section.name);
         } else {
-            out.push_str(&format!("## {} {} — {}\n", chk, section.name, section.description));
+            let _ = writeln!(out, "## {} {} — {}", chk, section.name, section.description);
         }
 
         for category in &section.categories {
             out.push('\n');
             if let Some(cat_name) = &category.name {
                 let cat_chk = if category.checked { "[x]" } else { "[ ]" };
-                out.push_str(&format!("### {} {}\n", cat_chk, cat_name));
+                let _ = writeln!(out, "### {} {}", cat_chk, cat_name);
             }
 
             for note in &category.notes {
@@ -323,15 +364,13 @@ pub fn render_document(doc: &Document) -> String {
                 };
 
                 if item.description.is_empty() {
-                    out.push_str(&format!("- {} {}{}\n", item_chk, prefix, format!("`{}`", item.name)));
+                    let _ = writeln!(out, "- {} {}`{}`", item_chk, prefix, item.name);
                 } else {
-                    out.push_str(&format!(
-                        "- {} {}{} — {}\n",
-                        item_chk,
-                        prefix,
-                        format!("`{}`", item.name),
-                        item.description
-                    ));
+                    let _ = writeln!(
+                        out,
+                        "- {} {}`{}` — {}",
+                        item_chk, prefix, item.name, item.description
+                    );
                 }
             }
         }
@@ -340,12 +379,7 @@ pub fn render_document(doc: &Document) -> String {
     out
 }
 
-pub fn insert_package_item(
-    doc: &mut Document,
-    section: &str,
-    category: &str,
-    item: PackageItem,
-) {
+pub fn insert_package_item(doc: &mut Document, section: &str, category: &str, item: PackageItem) {
     let sec = if let Some(pos) = doc
         .sections
         .iter()
@@ -363,11 +397,12 @@ pub fn insert_package_item(
         doc.sections.last_mut().unwrap()
     };
 
-    let cat = if let Some(pos) = sec
-        .categories
-        .iter()
-        .position(|c| c.name.as_deref().unwrap_or("").eq_ignore_ascii_case(category))
-    {
+    let cat = if let Some(pos) = sec.categories.iter().position(|c| {
+        c.name
+            .as_deref()
+            .unwrap_or("")
+            .eq_ignore_ascii_case(category)
+    }) {
         &mut sec.categories[pos]
     } else {
         sec.categories.push(CategoryBlock {
@@ -439,12 +474,34 @@ mod tests {
         assert!(issues.is_empty(), "unexpected issues: {:?}", issues);
         let items = &doc.sections[0].categories[0].items;
         assert_eq!(items.len(), 6);
-        assert_eq!((items[0].name.as_str(), items[0].source), ("git", PackageSource::Repo));
-        assert_eq!((items[1].name.as_str(), items[1].source, items[1].explicit_m_prefix), ("neovim", PackageSource::Repo, true));
-        assert_eq!((items[2].name.as_str(), items[2].source), ("google-chrome", PackageSource::Aur));
-        assert_eq!((items[3].name.as_str(), items[3].source), ("insync", PackageSource::Aur));
-        assert_eq!((items[4].name.as_str(), items[4].source, items[4].checked), ("typescript", PackageSource::Npm, false));
-        assert_eq!((items[5].name.as_str(), items[5].description.as_str()), ("dpkg", "debian package management"));
+        assert_eq!(
+            (items[0].name.as_str(), items[0].source),
+            ("git", PackageSource::Repo)
+        );
+        assert_eq!(
+            (
+                items[1].name.as_str(),
+                items[1].source,
+                items[1].explicit_m_prefix
+            ),
+            ("neovim", PackageSource::Repo, true)
+        );
+        assert_eq!(
+            (items[2].name.as_str(), items[2].source),
+            ("google-chrome", PackageSource::Aur)
+        );
+        assert_eq!(
+            (items[3].name.as_str(), items[3].source),
+            ("insync", PackageSource::Aur)
+        );
+        assert_eq!(
+            (items[4].name.as_str(), items[4].source, items[4].checked),
+            ("typescript", PackageSource::Npm, false)
+        );
+        assert_eq!(
+            (items[5].name.as_str(), items[5].description.as_str()),
+            ("dpkg", "debian package management")
+        );
 
         let rendered = render_document(&doc);
         assert!(rendered.contains("- [x] a:`google-chrome` — Chrome browser"));
@@ -469,7 +526,8 @@ mod tests {
 
     #[test]
     fn test_hyphenated_section_name() {
-        let input = "## [x] DEV-TOOLS — Development packages\n### [x] tools\n- [x] `cargo` — rust\n";
+        let input =
+            "## [x] DEV-TOOLS — Development packages\n### [x] tools\n- [x] `cargo` — rust\n";
         let (doc, issues) = parse_document(Path::new("packages.md"), input);
         assert!(issues.is_empty());
         assert_eq!(doc.sections[0].name, "DEV-TOOLS");
