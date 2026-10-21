@@ -1,19 +1,19 @@
 use crate::cli::{
-    AddArgs, CheckArgs, Cli, CliPackageSource, Commands, CompletionsArgs, ConfigCommand,
-    ConfigSubcommand, DisableArgs, HooksCommand, HooksSubcommand, ListArgs, PackageTargetArgs,
-    RemoveArgs, SyncArgs, UpdateArgs, render_ai_help,
+    render_ai_help, AddArgs, CheckArgs, Cli, CliPackageSource, Commands, CompletionsArgs,
+    ConfigCommand, ConfigSubcommand, DisableArgs, HooksCommand, HooksSubcommand, ListArgs,
+    PackageTargetArgs, RemoveArgs, SyncArgs, UpdateArgs,
 };
-use clap::CommandFactory;
-use clap_complete::{Shell, generate};
-use crate::config::{ResolvedPaths, resolve_paths, save_data_dir};
+use crate::config::{resolve_paths, save_data_dir, ResolvedPaths};
 use crate::hooks::{discover_hooks, init_hooks_dir, run_hook, validate_hooks};
 use crate::markdown::{
     insert_package_item, parse_document, remove_package_item, render_document, set_package_checked,
     validate_document,
 };
 use crate::model::{Document, HookStage, PackageItem, PackageSource};
-use crate::reconcile::{InstalledPackages, compute_sync_plan, reconcile_catalog_to_host};
-use crate::sources::{SystemBackend, execute_sync_plan};
+use crate::reconcile::{compute_sync_plan, reconcile_catalog_to_host, InstalledPackages};
+use crate::sources::{execute_sync_plan, SystemBackend};
+use clap::CommandFactory;
+use clap_complete::{generate, Shell};
 use dialoguer::{Input, Select};
 use std::collections::HashSet;
 use std::env;
@@ -152,7 +152,12 @@ fn handle_hooks(cmd: HooksCommand, paths: &ResolvedPaths) -> Result<(), anyhow::
             } else {
                 println!("Discovered lifecycle hooks ({}):", hooks.len());
                 for h in hooks {
-                    println!("  - {:<12} {:<20} -> {}", h.stage.as_str(), h.package, h.path.display());
+                    println!(
+                        "  - {:<12} {:<20} -> {}",
+                        h.stage.as_str(),
+                        h.package,
+                        h.path.display()
+                    );
                 }
             }
             Ok(())
@@ -164,7 +169,13 @@ fn handle_hooks(cmd: HooksCommand, paths: &ResolvedPaths) -> Result<(), anyhow::
             let hook = hooks
                 .iter()
                 .find(|h| h.package == package && h.stage == hook_stage)
-                .ok_or_else(|| anyhow::anyhow!("No hook found for package '{}' and stage '{}'", package, stage))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No hook found for package '{}' and stage '{}'",
+                        package,
+                        stage
+                    )
+                })?;
 
             let dummy_item = PackageItem {
                 checked: true,
@@ -272,7 +283,10 @@ fn handle_check(
 
     if !recon.newly_added.is_empty() {
         pending_drift = true;
-        println!("New packages in catalog not yet saved to {}:", paths.host_path.file_name().unwrap().to_string_lossy());
+        println!(
+            "New packages in catalog not yet saved to {}:",
+            paths.host_path.file_name().unwrap().to_string_lossy()
+        );
         for (pkg, src, chk) in &recon.newly_added {
             let state = if *chk { "enabled [x]" } else { "disabled [ ]" };
             println!("  - {} ({:?}) -> default {}", pkg, src, state);
@@ -281,7 +295,10 @@ fn handle_check(
 
     if !recon.removed_from_catalog.is_empty() {
         pending_drift = true;
-        println!("Packages in host file removed from master catalog: {}", recon.removed_from_catalog.join(", "));
+        println!(
+            "Packages in host file removed from master catalog: {}",
+            recon.removed_from_catalog.join(", ")
+        );
     }
 
     if !plan.to_install.is_empty() {
@@ -367,8 +384,13 @@ fn handle_sync(
         Some(args.sections.as_slice())
     };
 
-    let plan = compute_sync_plan(&ctx.host_doc, requested_sections, &ctx.installed, args.force_aur)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let plan = compute_sync_plan(
+        &ctx.host_doc,
+        requested_sections,
+        &ctx.installed,
+        args.force_aur,
+    )
+    .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     if plan.to_install.is_empty() && plan.to_remove.is_empty() && !ctx.structure_changed {
         println!("Everything is up to date. No changes needed.");
@@ -417,7 +439,11 @@ fn handle_add(
             CliPackageSource::Npm => PackageSource::Npm,
         }
     } else if atty_check() {
-        let selections = &["1. Manjaro Repository (default)", "2. AUR (a:)", "3. Global npm (n:)"];
+        let selections = &[
+            "1. Manjaro Repository (default)",
+            "2. AUR (a:)",
+            "3. Global npm (n:)",
+        ];
         let idx = Select::new()
             .with_prompt("Select package source")
             .items(selections)
@@ -444,8 +470,16 @@ fn handle_add(
     // Resolve category
     let category = if let Some(cat) = args.category {
         cat
-    } else if let Some(sec) = ctx.catalog_doc.sections.iter().find(|s| s.name.eq_ignore_ascii_case(&section)) {
-        sec.categories.first().and_then(|c| c.name.clone()).unwrap_or_else(|| "general".to_string())
+    } else if let Some(sec) = ctx
+        .catalog_doc
+        .sections
+        .iter()
+        .find(|s| s.name.eq_ignore_ascii_case(&section))
+    {
+        sec.categories
+            .first()
+            .and_then(|c| c.name.clone())
+            .unwrap_or_else(|| "general".to_string())
     } else {
         "general".to_string()
     };
@@ -475,7 +509,10 @@ fn handle_add(
     if !args.no_install {
         backend.ensure_elevated()?;
         let hooks = discover_hooks(&paths.hooks_dir).unwrap_or_default();
-        if let Some(h) = hooks.iter().find(|h| h.package == item.name && h.stage == HookStage::PreInstall) {
+        if let Some(h) = hooks
+            .iter()
+            .find(|h| h.package == item.name && h.stage == HookStage::PreInstall)
+        {
             run_hook(h, &item, &paths.host_name, &paths.data_dir)?;
         }
 
@@ -486,31 +523,41 @@ fn handle_add(
             PackageSource::Npm => backend.install_npm(&pkg_list, false)?,
         }
 
-        if let Some(h) = hooks.iter().find(|h| h.package == item.name && h.stage == HookStage::PostInstall) {
+        if let Some(h) = hooks
+            .iter()
+            .find(|h| h.package == item.name && h.stage == HookStage::PostInstall)
+        {
             run_hook(h, &item, &paths.host_name, &paths.data_dir)?;
         }
     }
 
     // Insert into master catalog if not already present
-    let already_in_catalog = ctx
-        .catalog_doc
-        .sections
-        .iter()
-        .any(|s| s.categories.iter().any(|c| c.items.iter().any(|i| i.name == args.package)));
+    let already_in_catalog = ctx.catalog_doc.sections.iter().any(|s| {
+        s.categories
+            .iter()
+            .any(|c| c.items.iter().any(|i| i.name == args.package))
+    });
 
     if !already_in_catalog {
         insert_package_item(&mut ctx.catalog_doc, &section, &category, item);
         fs::write(&paths.catalog_path, render_document(&ctx.catalog_doc))?;
     } else {
-        println!("Package '{}' already in master catalog. Updating host state.", args.package);
+        println!(
+            "Package '{}' already in master catalog. Updating host state.",
+            args.package
+        );
     }
 
     // Update host file
-    let mut recon = reconcile_catalog_to_host(&ctx.catalog_doc, Some(&ctx.host_doc), &ctx.installed);
+    let mut recon =
+        reconcile_catalog_to_host(&ctx.catalog_doc, Some(&ctx.host_doc), &ctx.installed);
     set_package_checked(&mut recon.host_doc, &args.package, true);
     save_host_document(paths, &recon.host_doc)?;
 
-    println!("Package '{}' added and enabled on {}.", args.package, paths.host_name);
+    println!(
+        "Package '{}' added and enabled on {}.",
+        args.package, paths.host_name
+    );
     Ok(())
 }
 
@@ -530,7 +577,11 @@ fn handle_enable(
     // Install if not already installed
     let plan = compute_sync_plan(&ctx.host_doc, None, &ctx.installed, false)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let to_install: Vec<PackageItem> = plan.to_install.into_iter().filter(|p| p.name == args.package).collect();
+    let to_install: Vec<PackageItem> = plan
+        .to_install
+        .into_iter()
+        .filter(|p| p.name == args.package)
+        .collect();
 
     if !to_install.is_empty() {
         backend.ensure_elevated()?;
@@ -539,7 +590,15 @@ fn handle_enable(
             to_remove: Vec::new(),
             skipped_installed_aur: Vec::new(),
         };
-        execute_sync_plan(&sub_plan, &paths.hooks_dir, &paths.host_name, &paths.data_dir, backend, true, false)?;
+        execute_sync_plan(
+            &sub_plan,
+            &paths.hooks_dir,
+            &paths.host_name,
+            &paths.data_dir,
+            backend,
+            true,
+            false,
+        )?;
     }
 
     println!("Enabled '{}' on {}.", args.package, paths.host_name);
@@ -562,7 +621,11 @@ fn handle_disable(
     // Uninstall if currently installed
     let plan = compute_sync_plan(&ctx.host_doc, None, &ctx.installed, false)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let to_remove: Vec<PackageItem> = plan.to_remove.into_iter().filter(|p| p.name == args.package).collect();
+    let to_remove: Vec<PackageItem> = plan
+        .to_remove
+        .into_iter()
+        .filter(|p| p.name == args.package)
+        .collect();
 
     if !to_remove.is_empty() {
         backend.ensure_elevated()?;
@@ -571,7 +634,15 @@ fn handle_disable(
             to_remove,
             skipped_installed_aur: Vec::new(),
         };
-        execute_sync_plan(&sub_plan, &paths.hooks_dir, &paths.host_name, &paths.data_dir, backend, args.no_confirm, false)?;
+        execute_sync_plan(
+            &sub_plan,
+            &paths.hooks_dir,
+            &paths.host_name,
+            &paths.data_dir,
+            backend,
+            args.no_confirm,
+            false,
+        )?;
     }
 
     println!("Disabled '{}' on {}.", args.package, paths.host_name);
@@ -597,7 +668,11 @@ fn handle_remove(
         let (mut catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
         if remove_package_item(&mut catalog_doc, &args.package) {
             fs::write(&paths.catalog_path, render_document(&catalog_doc))?;
-            println!("Purged '{}' from catalog {}.", args.package, paths.catalog_path.display());
+            println!(
+                "Purged '{}' from catalog {}.",
+                args.package,
+                paths.catalog_path.display()
+            );
         }
     }
 
@@ -626,7 +701,11 @@ fn handle_list(
 
             for item in &cat.items {
                 let is_inst = ctx.installed.is_installed(item.source, &item.name);
-                let inst_marker = if is_inst { "(installed)" } else { "(not installed)" };
+                let inst_marker = if is_inst {
+                    "(installed)"
+                } else {
+                    "(not installed)"
+                };
                 let chk = if item.checked { "[x]" } else { "[ ]" };
                 let src_prefix = match item.source {
                     PackageSource::Repo => "repo",

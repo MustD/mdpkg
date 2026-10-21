@@ -33,7 +33,10 @@ pub fn cleanup_stale_polkit_rule_at(path: &std::path::Path) -> Result<bool, anyh
             .args(["rm", "-f", path.to_str().unwrap_or(POLKIT_RULE_PATH)])
             .status()?;
         if !status.success() {
-            eprintln!("Warning: failed to remove stale polkit session rule at {}", path.display());
+            eprintln!(
+                "Warning: failed to remove stale polkit session rule at {}",
+                path.display()
+            );
             return Ok(false);
         }
         return Ok(true);
@@ -49,7 +52,8 @@ pub(crate) extern "C" fn async_signal_safe_cleanup() {
             let arg_sudo = b"sudo\0".as_ptr() as *const libc::c_char;
             let arg_rm = b"rm\0".as_ptr() as *const libc::c_char;
             let arg_f = b"-f\0".as_ptr() as *const libc::c_char;
-            let arg_rule = b"/etc/polkit-1/rules.d/90-mdpkg-session.rules\0".as_ptr() as *const libc::c_char;
+            let arg_rule =
+                b"/etc/polkit-1/rules.d/90-mdpkg-session.rules\0".as_ptr() as *const libc::c_char;
             let args = [arg_sudo, arg_rm, arg_f, arg_rule, std::ptr::null()];
             let env = [std::ptr::null()];
             libc::execve(sudo_path, args.as_ptr(), env.as_ptr());
@@ -145,25 +149,26 @@ impl PrivilegeSession {
         }
         let status = child.wait()?;
         if !status.success() {
-            eprintln!("Warning: failed to write polkit session rule at {}", POLKIT_RULE_PATH);
+            eprintln!(
+                "Warning: failed to write polkit session rule at {}",
+                POLKIT_RULE_PATH
+            );
         }
 
         // 4. Spawn background keep-alive thread with channel-based wakeup
         let (stop_sender, stop_receiver) = std::sync::mpsc::sync_channel::<()>(0);
 
-        let handle = thread::spawn(move || {
-            loop {
-                match stop_receiver.recv_timeout(Duration::from_secs(50)) {
-                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        break;
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        let _ = Command::new("sudo")
-                            .args(["-n", "-v"])
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .status();
-                    }
+        let handle = thread::spawn(move || loop {
+            match stop_receiver.recv_timeout(Duration::from_secs(50)) {
+                Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    let _ = Command::new("sudo")
+                        .args(["-n", "-v"])
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status();
                 }
             }
         });
@@ -209,7 +214,8 @@ mod tests {
     #[test]
     fn test_cleanup_stale_polkit_rule_when_missing() {
         let nonexistent = std::path::Path::new("/tmp/nonexistent-rule-file-test.rules");
-        let cleaned = cleanup_stale_polkit_rule_at(nonexistent).expect("should succeed when file does not exist");
+        let cleaned = cleanup_stale_polkit_rule_at(nonexistent)
+            .expect("should succeed when file does not exist");
         assert!(!cleaned);
     }
 
@@ -217,12 +223,10 @@ mod tests {
     fn test_keepalive_worker_terminates_immediately_on_shutdown() {
         let (tx, rx) = std::sync::mpsc::sync_channel::<()>(0);
         let start = std::time::Instant::now();
-        let handle = std::thread::spawn(move || {
-            loop {
-                match rx.recv_timeout(Duration::from_secs(50)) {
-                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                }
+        let handle = std::thread::spawn(move || loop {
+            match rx.recv_timeout(Duration::from_secs(50)) {
+                Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             }
         });
         let _ = tx.send(());

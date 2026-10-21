@@ -9,12 +9,32 @@ use std::process::Command;
 pub trait SystemBackend {
     fn query_installed(&self) -> Result<InstalledPackages, anyhow::Error>;
     fn ensure_elevated(&mut self) -> Result<(), anyhow::Error>;
-    fn install_repo(&mut self, pkgs: &[String], no_confirm: bool, dry_run: bool) -> Result<(), anyhow::Error>;
-    fn install_aur(&mut self, pkgs: &[String], no_confirm: bool, dry_run: bool) -> Result<(), anyhow::Error>;
+    fn install_repo(
+        &mut self,
+        pkgs: &[String],
+        no_confirm: bool,
+        dry_run: bool,
+    ) -> Result<(), anyhow::Error>;
+    fn install_aur(
+        &mut self,
+        pkgs: &[String],
+        no_confirm: bool,
+        dry_run: bool,
+    ) -> Result<(), anyhow::Error>;
     fn install_npm(&mut self, pkgs: &[String], dry_run: bool) -> Result<(), anyhow::Error>;
-    fn remove_repo_or_aur(&mut self, pkgs: &[String], no_confirm: bool, dry_run: bool) -> Result<(), anyhow::Error>;
+    fn remove_repo_or_aur(
+        &mut self,
+        pkgs: &[String],
+        no_confirm: bool,
+        dry_run: bool,
+    ) -> Result<(), anyhow::Error>;
     fn remove_npm(&mut self, pkgs: &[String], dry_run: bool) -> Result<(), anyhow::Error>;
-    fn run_system_update(&mut self, no_confirm: bool, skip_npm: bool, skip_orphans: bool) -> Result<(), anyhow::Error>;
+    fn run_system_update(
+        &mut self,
+        no_confirm: bool,
+        skip_npm: bool,
+        skip_orphans: bool,
+    ) -> Result<(), anyhow::Error>;
 }
 
 #[derive(Default)]
@@ -39,7 +59,12 @@ impl SystemBackend for MockSystemBackend {
         Ok(())
     }
 
-    fn install_repo(&mut self, pkgs: &[String], _no_confirm: bool, _dry_run: bool) -> Result<(), anyhow::Error> {
+    fn install_repo(
+        &mut self,
+        pkgs: &[String],
+        _no_confirm: bool,
+        _dry_run: bool,
+    ) -> Result<(), anyhow::Error> {
         self.installed_repo.extend_from_slice(pkgs);
         for p in pkgs {
             self.installed.repo_and_aur.insert(p.clone());
@@ -47,7 +72,12 @@ impl SystemBackend for MockSystemBackend {
         Ok(())
     }
 
-    fn install_aur(&mut self, pkgs: &[String], _no_confirm: bool, _dry_run: bool) -> Result<(), anyhow::Error> {
+    fn install_aur(
+        &mut self,
+        pkgs: &[String],
+        _no_confirm: bool,
+        _dry_run: bool,
+    ) -> Result<(), anyhow::Error> {
         self.installed_aur.extend_from_slice(pkgs);
         for p in pkgs {
             self.installed.repo_and_aur.insert(p.clone());
@@ -63,7 +93,12 @@ impl SystemBackend for MockSystemBackend {
         Ok(())
     }
 
-    fn remove_repo_or_aur(&mut self, pkgs: &[String], _no_confirm: bool, _dry_run: bool) -> Result<(), anyhow::Error> {
+    fn remove_repo_or_aur(
+        &mut self,
+        pkgs: &[String],
+        _no_confirm: bool,
+        _dry_run: bool,
+    ) -> Result<(), anyhow::Error> {
         self.removed_repo_or_aur.extend_from_slice(pkgs);
         for p in pkgs {
             self.installed.repo_and_aur.remove(p);
@@ -79,7 +114,12 @@ impl SystemBackend for MockSystemBackend {
         Ok(())
     }
 
-    fn run_system_update(&mut self, _no_confirm: bool, _skip_npm: bool, _skip_orphans: bool) -> Result<(), anyhow::Error> {
+    fn run_system_update(
+        &mut self,
+        _no_confirm: bool,
+        _skip_npm: bool,
+        _skip_orphans: bool,
+    ) -> Result<(), anyhow::Error> {
         self.updated = true;
         Ok(())
     }
@@ -137,7 +177,12 @@ impl SystemBackend for RealSystemBackend {
         Ok(InstalledPackages { repo_and_aur, npm })
     }
 
-    fn install_repo(&mut self, pkgs: &[String], no_confirm: bool, dry_run: bool) -> Result<(), anyhow::Error> {
+    fn install_repo(
+        &mut self,
+        pkgs: &[String],
+        no_confirm: bool,
+        dry_run: bool,
+    ) -> Result<(), anyhow::Error> {
         if pkgs.is_empty() {
             return Ok(());
         }
@@ -158,7 +203,12 @@ impl SystemBackend for RealSystemBackend {
         Ok(())
     }
 
-    fn install_aur(&mut self, pkgs: &[String], no_confirm: bool, dry_run: bool) -> Result<(), anyhow::Error> {
+    fn install_aur(
+        &mut self,
+        pkgs: &[String],
+        no_confirm: bool,
+        dry_run: bool,
+    ) -> Result<(), anyhow::Error> {
         if pkgs.is_empty() {
             return Ok(());
         }
@@ -197,7 +247,12 @@ impl SystemBackend for RealSystemBackend {
         Ok(())
     }
 
-    fn remove_repo_or_aur(&mut self, pkgs: &[String], no_confirm: bool, dry_run: bool) -> Result<(), anyhow::Error> {
+    fn remove_repo_or_aur(
+        &mut self,
+        pkgs: &[String],
+        no_confirm: bool,
+        dry_run: bool,
+    ) -> Result<(), anyhow::Error> {
         if pkgs.is_empty() {
             return Ok(());
         }
@@ -236,7 +291,12 @@ impl SystemBackend for RealSystemBackend {
         Ok(())
     }
 
-    fn run_system_update(&mut self, no_confirm: bool, skip_npm: bool, skip_orphans: bool) -> Result<(), anyhow::Error> {
+    fn run_system_update(
+        &mut self,
+        no_confirm: bool,
+        skip_npm: bool,
+        skip_orphans: bool,
+    ) -> Result<(), anyhow::Error> {
         // Step 1: Clean build files
         println!("==> Step 1: Cleaning AUR build files...");
         let _ = Command::new("pamac")
@@ -275,7 +335,9 @@ impl SystemBackend for RealSystemBackend {
                 .unwrap_or(false);
 
             if npm_available {
-                let status = Command::new("sudo").args(["npm", "update", "-g"]).status()?;
+                let status = Command::new("sudo")
+                    .args(["npm", "update", "-g"])
+                    .status()?;
                 if !status.success() {
                     eprintln!("Warning: sudo npm update -g exited with status {}", status);
                 }
@@ -441,20 +503,50 @@ mod tests {
         let dir = tempdir().unwrap();
         let hooks_dir = dir.path().join("hooks");
         fs::create_dir_all(&hooks_dir).unwrap();
-        fs::write(hooks_dir.join("badpkg_preInstall.sh"), "#!/usr/bin/env bash\nexit 1\n").unwrap();
-        fs::write(hooks_dir.join("goodpkg_postInstall.sh"), "#!/usr/bin/env bash\necho ok > \"$MDPKG_DATA_DIR/good_post.txt\"\n").unwrap();
+        fs::write(
+            hooks_dir.join("badpkg_preInstall.sh"),
+            "#!/usr/bin/env bash\nexit 1\n",
+        )
+        .unwrap();
+        fs::write(
+            hooks_dir.join("goodpkg_postInstall.sh"),
+            "#!/usr/bin/env bash\necho ok > \"$MDPKG_DATA_DIR/good_post.txt\"\n",
+        )
+        .unwrap();
 
         let plan = SyncPlan {
             to_install: vec![
-                PackageItem { checked: true, source: PackageSource::Repo, explicit_m_prefix: false, name: "badpkg".into(), description: "".into(), line_no: 1 },
-                PackageItem { checked: true, source: PackageSource::Repo, explicit_m_prefix: false, name: "goodpkg".into(), description: "".into(), line_no: 2 },
+                PackageItem {
+                    checked: true,
+                    source: PackageSource::Repo,
+                    explicit_m_prefix: false,
+                    name: "badpkg".into(),
+                    description: "".into(),
+                    line_no: 1,
+                },
+                PackageItem {
+                    checked: true,
+                    source: PackageSource::Repo,
+                    explicit_m_prefix: false,
+                    name: "goodpkg".into(),
+                    description: "".into(),
+                    line_no: 2,
+                },
             ],
             to_remove: vec![],
             skipped_installed_aur: vec![],
         };
 
         let mut backend = MockSystemBackend::default();
-        let res = execute_sync_plan(&plan, &hooks_dir, "testhost", dir.path(), &mut backend, true, false);
+        let res = execute_sync_plan(
+            &plan,
+            &hooks_dir,
+            "testhost",
+            dir.path(),
+            &mut backend,
+            true,
+            false,
+        );
         assert!(res.is_err()); // overall run reports failure due to badpkg preInstall
         assert_eq!(backend.installed_repo, vec!["goodpkg".to_string()]);
         assert!(dir.path().join("good_post.txt").exists());
@@ -462,7 +554,8 @@ mod tests {
 
     #[test]
     fn parse_npm_json_extracts_top_level_dependency_keys() {
-        let sample = r#"{"dependencies":{"typescript":{"version":"5.6.2"},"eslint":{"version":"9.0.0"}}}"#;
+        let sample =
+            r#"{"dependencies":{"typescript":{"version":"5.6.2"},"eslint":{"version":"9.0.0"}}}"#;
         let pkgs = parse_npm_global_json(sample);
         assert!(pkgs.contains("typescript"));
         assert!(pkgs.contains("eslint"));

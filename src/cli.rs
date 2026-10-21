@@ -147,13 +147,22 @@ pub struct SyncArgs {
     #[arg(long, help = "Sync all checked sections (default behavior)")]
     pub all: bool,
 
-    #[arg(long, help = "Force reinstall/rebuild of already-installed AUR packages")]
+    #[arg(
+        long,
+        help = "Force reinstall/rebuild of already-installed AUR packages"
+    )]
     pub force_aur: bool,
 
-    #[arg(long, help = "Simulate operations without making changes to disk or packages")]
+    #[arg(
+        long,
+        help = "Simulate operations without making changes to disk or packages"
+    )]
     pub dry_run: bool,
 
-    #[arg(long, help = "Do not prompt for confirmation before package operations")]
+    #[arg(
+        long,
+        help = "Do not prompt for confirmation before package operations"
+    )]
     pub no_confirm: bool,
 }
 
@@ -174,7 +183,12 @@ pub struct AddArgs {
     #[arg(help = "Package name to add")]
     pub package: String,
 
-    #[arg(short, long, value_enum, help = "Package source (m/repo, a/aur, n/npm)")]
+    #[arg(
+        short,
+        long,
+        value_enum,
+        help = "Package source (m/repo, a/aur, n/npm)"
+    )]
     pub source: Option<CliPackageSource>,
 
     #[arg(long, help = "Target section name (e.g. MAIN)")]
@@ -186,7 +200,10 @@ pub struct AddArgs {
     #[arg(long, help = "Short package description")]
     pub desc: Option<String>,
 
-    #[arg(long, help = "Add to Markdown without installing on the current machine")]
+    #[arg(
+        long,
+        help = "Add to Markdown without installing on the current machine"
+    )]
     pub no_install: bool,
 }
 
@@ -210,7 +227,10 @@ pub struct RemoveArgs {
     #[arg(help = "Package name")]
     pub package: String,
 
-    #[arg(long, help = "Also purge the package entry from packages.md master catalog")]
+    #[arg(
+        long,
+        help = "Also purge the package entry from packages.md master catalog"
+    )]
     pub purge_catalog: bool,
 
     #[arg(long, help = "Do not prompt for confirmation")]
@@ -219,10 +239,16 @@ pub struct RemoveArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct CheckArgs {
-    #[arg(long, help = "Check all <host>.md files in the data directory, not just the current host")]
+    #[arg(
+        long,
+        help = "Check all <host>.md files in the data directory, not just the current host"
+    )]
     pub all_hosts: bool,
 
-    #[arg(long, help = "Exit with non-zero status if any pending actions or drifts are found")]
+    #[arg(
+        long,
+        help = "Exit with non-zero status if any pending actions or drifts are found"
+    )]
     pub strict: bool,
 }
 

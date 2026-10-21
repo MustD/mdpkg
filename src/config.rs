@@ -186,7 +186,8 @@ mod tests {
     }
 
     #[test]
-    fn save_data_dir_normalizes_relative_path_against_cwd_so_later_calls_from_other_dirs_use_config() {
+    fn save_data_dir_normalizes_relative_path_against_cwd_so_later_calls_from_other_dirs_use_config(
+    ) {
         let dir = tempdir().unwrap();
         let config_file = dir.path().join("config.toml");
         let target_dir = dir.path().join("my_packages");

@@ -27,7 +27,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `PERF-02` | Add fast-path prefix filters to avoid unnecessary Regex matching | `src/markdown.rs` | Performance | P1 | `[x]` |
 | `PERF-03` | Eliminate temporary allocations in `render_document` | `src/markdown.rs` | Performance | P2 | `[x]` |
 | `PERF-04` | Reduce redundant string clones in reconciliation | `src/reconcile.rs` | Performance | P2 | `[x]` |
-| `TST-01` | Verify test suite and enforce zero warnings in CI/checks | Repository-wide | Quality Gate | P0 | `[ ]` |
+| `TST-01` | Verify test suite and enforce zero warnings in CI/checks | Repository-wide | Quality Gate | P0 | `[x]` |
 
 ---
 
@@ -210,7 +210,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 
 ### Phase 5: Verification & Quality Gate (P0)
 
-#### [ ] Task `TST-01`: Full verification suite
+#### [x] Task `TST-01`: Full verification suite
 - Run `cargo fmt --check`
 - Run `cargo clippy --all-targets -- -D warnings`
 - Run `cargo test --all`

@@ -169,16 +169,34 @@ fn real_world_multi_section_legacy_aur_blockquotes_and_sync() {
 fn test_add_existing_package_does_not_duplicate_in_catalog() {
     let dir = tempdir().unwrap();
     let catalog = dir.path().join("packages.md");
-    fs::write(&catalog, "# Packages\n\n## [x] MAIN — Core\n\n### [x] cli\n- [x] `git` — vcs\n").unwrap();
+    fs::write(
+        &catalog,
+        "# Packages\n\n## [x] MAIN — Core\n\n### [x] cli\n- [x] `git` — vcs\n",
+    )
+    .unwrap();
 
     let mut backend = MockSystemBackend::default();
     backend.installed.repo_and_aur.insert("git".to_string());
 
     // Adding git again should not create a duplicate in packages.md
     let cli = Cli::try_parse_from([
-        "mdpkg", "--dir", dir.path().to_str().unwrap(), "--host", "laptop",
-        "add", "git", "--source", "repo", "--section", "MAIN", "--category", "cli", "--desc", "vcs",
-    ]).unwrap();
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "laptop",
+        "add",
+        "git",
+        "--source",
+        "repo",
+        "--section",
+        "MAIN",
+        "--category",
+        "cli",
+        "--desc",
+        "vcs",
+    ])
+    .unwrap();
     execute_command(cli, &mut backend).unwrap();
 
     let content = fs::read_to_string(&catalog).unwrap();
@@ -189,20 +207,30 @@ fn test_add_existing_package_does_not_duplicate_in_catalog() {
 fn test_privileged_commands_trigger_backend_elevation() {
     let dir = tempdir().unwrap();
     let catalog = dir.path().join("packages.md");
-    fs::write(&catalog, "# Packages\n\n## [x] MAIN — Core\n\n### [x] cli\n- [x] `git` — vcs\n").unwrap();
+    fs::write(
+        &catalog,
+        "# Packages\n\n## [x] MAIN — Core\n\n### [x] cli\n- [x] `git` — vcs\n",
+    )
+    .unwrap();
 
     let mut backend = MockSystemBackend::default();
 
     // mdpkg update should trigger ensure_elevated
     let cli = Cli::try_parse_from([
-        "mdpkg", "--dir", dir.path().to_str().unwrap(), "update", "--no-confirm",
-    ]).unwrap();
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "update",
+        "--no-confirm",
+    ])
+    .unwrap();
     execute_command(cli, &mut backend).unwrap();
     assert!(backend.elevated);
 }
 
 #[test]
-fn test_config_set_dir_relative_resolves_to_absolute_and_works_without_dir_flag_from_other_callsite() {
+fn test_config_set_dir_relative_resolves_to_absolute_and_works_without_dir_flag_from_other_callsite(
+) {
     let dir = tempdir().unwrap();
     let config_file = dir.path().join("config.toml");
     let pkg_dir = dir.path().join("repo").join("mdpkg");
@@ -301,7 +329,11 @@ fn test_completions_subcommand_parses_and_generates_scripts_for_all_shells() {
         let mut buf = Vec::new();
         generate_completions(shell_enum, &mut buf);
         let script = String::from_utf8(buf).unwrap();
-        assert!(!script.is_empty(), "Expected non-empty script for {}", shell_arg);
+        assert!(
+            !script.is_empty(),
+            "Expected non-empty script for {}",
+            shell_arg
+        );
         assert!(
             script.contains("mdpkg") && script.contains("sync") && script.contains("completions"),
             "Expected subcommands in {} script, got: {}",

@@ -1,4 +1,6 @@
-use crate::model::{CategoryBlock, Document, PackageItem, PackageSource, SectionBlock, ValidationIssue};
+use crate::model::{
+    CategoryBlock, Document, PackageItem, PackageSource, SectionBlock, ValidationIssue,
+};
 use regex::Regex;
 use std::collections::HashSet;
 use std::path::Path;
@@ -40,7 +42,7 @@ fn item_regex() -> &'static Regex {
 
 fn potential_item_regex() -> &'static Regex {
     RE_POTENTIAL_ITEM.get_or_init(|| {
-        // Any bullet line starting with - [x], - [ ], or just - 
+        // Any bullet line starting with - [x], - [ ], or just -
         Regex::new(r#"^\s*-\s*(?:\[[ xX]\]\s*)?.*"#).unwrap()
     })
 }
@@ -51,7 +53,10 @@ fn flush_category(
 ) {
     if let Some(cat) = current_category.take() {
         if let Some(sec) = current_section {
-            if cat.name.is_some() || !cat.items.is_empty() || cat.notes.iter().any(|n| !n.trim().is_empty()) {
+            if cat.name.is_some()
+                || !cat.items.is_empty()
+                || cat.notes.iter().any(|n| !n.trim().is_empty())
+            {
                 sec.categories.push(cat);
             }
         }
@@ -106,8 +111,13 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
             flush_category(&mut current_category, &mut current_section);
 
             if let Some(caps) = cat_re.captures(trimmed) {
-                let checked = caps.get(1).map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
-                let name = caps.get(2).map(|m| m.as_str().trim().to_string()).filter(|s| !s.is_empty());
+                let checked = caps
+                    .get(1)
+                    .map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
+                let name = caps
+                    .get(2)
+                    .map(|m| m.as_str().trim().to_string())
+                    .filter(|s| !s.is_empty());
 
                 current_category = Some(CategoryBlock {
                     name,
@@ -137,7 +147,9 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
             }
 
             if let Some(caps) = sec_re.captures(trimmed) {
-                let checked = caps.get(1).map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
+                let checked = caps
+                    .get(1)
+                    .map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
                 let name = caps.get(2).map_or("", |m| m.as_str()).trim().to_string();
                 let desc = caps.get(3).map_or("", |m| m.as_str()).trim().to_string();
 
@@ -172,7 +184,9 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
 
             // Try parsing as package item
             if let Some(caps) = item_re.captures(trimmed) {
-                let checked = caps.get(1).map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
+                let checked = caps
+                    .get(1)
+                    .map_or(true, |m| m.as_str().eq_ignore_ascii_case("x"));
                 let prefix = caps.get(2).map(|m| m.as_str());
                 let legacy_aur = caps.get(3).is_some();
                 let pkg_name = caps.get(4).unwrap().as_str().trim().to_string();
@@ -191,7 +205,8 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
                     }
                 };
 
-                let explicit_m_prefix = matches!(prefix, Some("m") | Some("manjaro") | Some("repo"));
+                let explicit_m_prefix =
+                    matches!(prefix, Some("m") | Some("manjaro") | Some("repo"));
 
                 if !seen_packages.insert(pkg_name.clone()) {
                     issues.push(ValidationIssue {
@@ -250,7 +265,11 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
                         items: Vec::new(),
                     });
                 }
-                current_category.as_mut().unwrap().notes.push(line.to_string());
+                current_category
+                    .as_mut()
+                    .unwrap()
+                    .notes
+                    .push(line.to_string());
             }
         }
     }
@@ -281,7 +300,9 @@ pub fn render_document(doc: &Document) -> String {
                 s.categories.len() * 32
                     + s.categories
                         .iter()
-                        .map(|c| c.items.len() * 48 + c.notes.iter().map(|n| n.len() + 1).sum::<usize>())
+                        .map(|c| {
+                            c.items.len() * 48 + c.notes.iter().map(|n| n.len() + 1).sum::<usize>()
+                        })
                         .sum::<usize>()
             })
             .sum::<usize>()
@@ -358,12 +379,7 @@ pub fn render_document(doc: &Document) -> String {
     out
 }
 
-pub fn insert_package_item(
-    doc: &mut Document,
-    section: &str,
-    category: &str,
-    item: PackageItem,
-) {
+pub fn insert_package_item(doc: &mut Document, section: &str, category: &str, item: PackageItem) {
     let sec = if let Some(pos) = doc
         .sections
         .iter()
@@ -381,11 +397,12 @@ pub fn insert_package_item(
         doc.sections.last_mut().unwrap()
     };
 
-    let cat = if let Some(pos) = sec
-        .categories
-        .iter()
-        .position(|c| c.name.as_deref().unwrap_or("").eq_ignore_ascii_case(category))
-    {
+    let cat = if let Some(pos) = sec.categories.iter().position(|c| {
+        c.name
+            .as_deref()
+            .unwrap_or("")
+            .eq_ignore_ascii_case(category)
+    }) {
         &mut sec.categories[pos]
     } else {
         sec.categories.push(CategoryBlock {
@@ -457,12 +474,34 @@ mod tests {
         assert!(issues.is_empty(), "unexpected issues: {:?}", issues);
         let items = &doc.sections[0].categories[0].items;
         assert_eq!(items.len(), 6);
-        assert_eq!((items[0].name.as_str(), items[0].source), ("git", PackageSource::Repo));
-        assert_eq!((items[1].name.as_str(), items[1].source, items[1].explicit_m_prefix), ("neovim", PackageSource::Repo, true));
-        assert_eq!((items[2].name.as_str(), items[2].source), ("google-chrome", PackageSource::Aur));
-        assert_eq!((items[3].name.as_str(), items[3].source), ("insync", PackageSource::Aur));
-        assert_eq!((items[4].name.as_str(), items[4].source, items[4].checked), ("typescript", PackageSource::Npm, false));
-        assert_eq!((items[5].name.as_str(), items[5].description.as_str()), ("dpkg", "debian package management"));
+        assert_eq!(
+            (items[0].name.as_str(), items[0].source),
+            ("git", PackageSource::Repo)
+        );
+        assert_eq!(
+            (
+                items[1].name.as_str(),
+                items[1].source,
+                items[1].explicit_m_prefix
+            ),
+            ("neovim", PackageSource::Repo, true)
+        );
+        assert_eq!(
+            (items[2].name.as_str(), items[2].source),
+            ("google-chrome", PackageSource::Aur)
+        );
+        assert_eq!(
+            (items[3].name.as_str(), items[3].source),
+            ("insync", PackageSource::Aur)
+        );
+        assert_eq!(
+            (items[4].name.as_str(), items[4].source, items[4].checked),
+            ("typescript", PackageSource::Npm, false)
+        );
+        assert_eq!(
+            (items[5].name.as_str(), items[5].description.as_str()),
+            ("dpkg", "debian package management")
+        );
 
         let rendered = render_document(&doc);
         assert!(rendered.contains("- [x] a:`google-chrome` — Chrome browser"));
@@ -487,7 +526,8 @@ mod tests {
 
     #[test]
     fn test_hyphenated_section_name() {
-        let input = "## [x] DEV-TOOLS — Development packages\n### [x] tools\n- [x] `cargo` — rust\n";
+        let input =
+            "## [x] DEV-TOOLS — Development packages\n### [x] tools\n- [x] `cargo` — rust\n";
         let (doc, issues) = parse_document(Path::new("packages.md"), input);
         assert!(issues.is_empty());
         assert_eq!(doc.sections[0].name, "DEV-TOOLS");

@@ -282,8 +282,20 @@ mod tests {
         };
 
         let plan = compute_sync_plan(&host, None, &installed, false).unwrap();
-        assert_eq!(plan.to_install.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["fd"]);
-        assert_eq!(plan.to_remove.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["git"]);
+        assert_eq!(
+            plan.to_install
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["fd"]
+        );
+        assert_eq!(
+            plan.to_remove
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["git"]
+        );
         assert_eq!(plan.skipped_installed_aur, vec!["insync".to_string()]);
 
         // Item checkbox inside disabled category remains [x] when rendered back

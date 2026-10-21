@@ -153,7 +153,10 @@ mod tests {
         assert_eq!(PackageSource::Npm.to_string(), "n:");
 
         assert_eq!(HookStage::PreInstall.to_string(), "preInstall");
-        assert_eq!(HookStage::from_str("postInstall"), Ok(HookStage::PostInstall));
+        assert_eq!(
+            HookStage::from_str("postInstall"),
+            Ok(HookStage::PostInstall)
+        );
         assert_eq!(HookStage::try_from("preRemoval"), Ok(HookStage::PreRemoval));
         assert!(HookStage::from_str("invalid").is_err());
     }
