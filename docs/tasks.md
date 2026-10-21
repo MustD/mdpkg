@@ -24,7 +24,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `SIM-02` | Implement standard Rust conversion traits (`Display`, `FromStr`) | `src/model.rs` | Idiomatic Rust | P2 | `[x]` |
 | `SIM-03` | Clean up path normalization and tilde expansion | `src/config.rs` | Simplification | P2 | `[x]` |
 | `PERF-01` | Replace string-rendering diff with structural equality | `src/reconcile.rs` | Performance | P1 | `[x]` |
-| `PERF-02` | Add fast-path prefix filters to avoid unnecessary Regex matching | `src/markdown.rs` | Performance | P1 | `[ ]` |
+| `PERF-02` | Add fast-path prefix filters to avoid unnecessary Regex matching | `src/markdown.rs` | Performance | P1 | `[x]` |
 | `PERF-03` | Eliminate temporary allocations in `render_document` | `src/markdown.rs` | Performance | P2 | `[ ]` |
 | `PERF-04` | Reduce redundant string clones in reconciliation | `src/reconcile.rs` | Performance | P2 | `[ ]` |
 | `TST-01` | Verify test suite and enforce zero warnings in CI/checks | Repository-wide | Quality Gate | P0 | `[ ]` |
@@ -179,7 +179,7 @@ This document tracks all identified code-quality improvements, simplifications, 
   - This avoids thousands of allocations and regex/format overhead on every sync or check.
 - **Verification**: Run `cargo test`; verify `structure_changed` produces the identical boolean result in integration tests.
 
-#### [ ] Task `PERF-02`: Add fast-path prefix filters to avoid unnecessary Regex matching
+#### [x] Task `PERF-02`: Add fast-path prefix filters to avoid unnecessary Regex matching
 - **Location**: `src/markdown.rs:79-253`
 - **Issue**:
   - `parse_document` iterates over every line and tests multiple complex regular expressions (`RE_SECTION`, `RE_CATEGORY`, `RE_ITEM`, `RE_POTENTIAL_ITEM`).

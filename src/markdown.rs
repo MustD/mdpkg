@@ -158,8 +158,8 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
             continue;
         }
 
-        // Check if line might be an item
-        if pot_re.is_match(trimmed) {
+        // Check if line might be an item (fast-path filter avoids regex if line does not start with '-')
+        if trimmed.starts_with('-') && pot_re.is_match(trimmed) {
             // Check if before section
             if current_section.is_none() {
                 issues.push(ValidationIssue {
