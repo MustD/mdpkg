@@ -3,8 +3,29 @@ use std::process::{Command, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-pub fn polkit_rule_content(username: &str) -> String {
-    format!(
+pub fn is_valid_username(username: &str) -> bool {
+    if username.is_empty() || username.len() > 64 {
+        return false;
+    }
+    let mut chars = username.chars();
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !first.is_ascii_alphanumeric() && first != '_' {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+}
+
+pub fn polkit_rule_content(username: &str) -> Result<String, anyhow::Error> {
+    if !is_valid_username(username) {
+        anyhow::bail!(
+            "Invalid username '{}': contains illegal characters or invalid format",
+            username
+        );
+    }
+    Ok(format!(
         r#"polkit.addRule(function(action, subject) {{
     if (action.id == "org.manjaro.pamac.commit" && subject.user == "{}") {{
         return polkit.Result.YES;
@@ -12,7 +33,7 @@ pub fn polkit_rule_content(username: &str) -> String {
 }});
 "#,
         username
-    )
+    ))
 }
 
 pub struct PrivilegeSession {
@@ -30,7 +51,7 @@ pub fn cleanup_stale_polkit_rule() -> Result<bool, anyhow::Error> {
 pub fn cleanup_stale_polkit_rule_at(path: &std::path::Path) -> Result<bool, anyhow::Error> {
     if path.exists() {
         let status = Command::new("sudo")
-            .args(["rm", "-f", path.to_str().unwrap_or(POLKIT_RULE_PATH)])
+            .args(["-n", "rm", "-f", path.to_str().unwrap_or(POLKIT_RULE_PATH)])
             .status()?;
         if !status.success() {
             eprintln!(
@@ -50,11 +71,12 @@ pub(crate) extern "C" fn async_signal_safe_cleanup() {
         if pid == 0 {
             let sudo_path = b"/usr/bin/sudo\0".as_ptr() as *const libc::c_char;
             let arg_sudo = b"sudo\0".as_ptr() as *const libc::c_char;
+            let arg_n = b"-n\0".as_ptr() as *const libc::c_char;
             let arg_rm = b"rm\0".as_ptr() as *const libc::c_char;
             let arg_f = b"-f\0".as_ptr() as *const libc::c_char;
             let arg_rule =
                 b"/etc/polkit-1/rules.d/90-mdpkg-session.rules\0".as_ptr() as *const libc::c_char;
-            let args = [arg_sudo, arg_rm, arg_f, arg_rule, std::ptr::null()];
+            let args = [arg_sudo, arg_n, arg_rm, arg_f, arg_rule, std::ptr::null()];
             let env = [std::ptr::null()];
             libc::execve(sudo_path, args.as_ptr(), env.as_ptr());
             libc::_exit(1);
@@ -67,7 +89,7 @@ pub(crate) extern "C" fn async_signal_safe_cleanup() {
 
 extern "C" fn cleanup_polkit_rule() {
     let _ = Command::new("sudo")
-        .args(["rm", "-f", POLKIT_RULE_PATH])
+        .args(["-n", "rm", "-f", POLKIT_RULE_PATH])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
@@ -82,18 +104,7 @@ extern "C" fn sigint_handler(sig: libc::c_int) {
 }
 
 pub fn resolve_current_username() -> Result<String, anyhow::Error> {
-    if let Ok(user) = std::env::var("USER") {
-        let trimmed = user.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
-    }
-    if let Ok(user) = std::env::var("LOGNAME") {
-        let trimmed = user.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
-    }
+    // 1. Primary: query canonical system identity from libc
     unsafe {
         let uid = libc::getuid();
         let pwd = libc::getpwuid(uid);
@@ -101,18 +112,32 @@ pub fn resolve_current_username() -> Result<String, anyhow::Error> {
             let cstr = std::ffi::CStr::from_ptr((*pwd).pw_name);
             if let Ok(s) = cstr.to_str() {
                 let trimmed = s.trim();
-                if !trimmed.is_empty() {
+                if is_valid_username(trimmed) {
                     return Ok(trimmed.to_string());
                 }
             }
         }
     }
+    // 2. Secondary: environment variables (strictly validated against POSIX username constraints)
+    if let Ok(user) = std::env::var("USER") {
+        let trimmed = user.trim();
+        if is_valid_username(trimmed) {
+            return Ok(trimmed.to_string());
+        }
+    }
+    if let Ok(user) = std::env::var("LOGNAME") {
+        let trimmed = user.trim();
+        if is_valid_username(trimmed) {
+            return Ok(trimmed.to_string());
+        }
+    }
+    // 3. Fallback: id -un
     let output = Command::new("id").arg("-un").output()?;
     let username = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if username.is_empty() {
-        anyhow::bail!("Failed to determine current username");
+    if is_valid_username(&username) {
+        return Ok(username);
     }
-    Ok(username)
+    anyhow::bail!("Failed to determine valid current username");
 }
 
 impl PrivilegeSession {
@@ -137,7 +162,7 @@ impl PrivilegeSession {
         let username = resolve_current_username()?;
 
         // 3. Write Polkit rule
-        let rule = polkit_rule_content(&username);
+        let rule = polkit_rule_content(&username)?;
         let mut child = Command::new("sudo")
             .args(["tee", POLKIT_RULE_PATH])
             .stdin(Stdio::piped())
@@ -200,10 +225,16 @@ mod tests {
 
     #[test]
     fn test_polkit_rule_content() {
-        let rule = polkit_rule_content("testuser");
+        let rule = polkit_rule_content("testuser").expect("valid username should succeed");
         assert!(rule.contains("org.manjaro.pamac.commit"));
         assert!(rule.contains("subject.user == \"testuser\""));
         assert!(rule.contains("polkit.Result.YES"));
+
+        // Malicious username with injection attempts must be rejected
+        assert!(polkit_rule_content("user\"); malicious_js(); //").is_err());
+        assert!(polkit_rule_content("user$(id)").is_err());
+        assert!(polkit_rule_content("user`id`").is_err());
+        assert!(polkit_rule_content("").is_err());
     }
 
     #[test]

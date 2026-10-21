@@ -31,6 +31,41 @@ pub struct SyncPlan {
     pub skipped_installed_aur: Vec<String>,
 }
 
+pub fn is_structurally_equal(a: &Document, b: &Document) -> bool {
+    if a.title != b.title || a.preamble != b.preamble || a.sections.len() != b.sections.len() {
+        return false;
+    }
+    for (s_a, s_b) in a.sections.iter().zip(&b.sections) {
+        if s_a.name != s_b.name
+            || s_a.checked != s_b.checked
+            || s_a.description != s_b.description
+            || s_a.categories.len() != s_b.categories.len()
+        {
+            return false;
+        }
+        for (c_a, c_b) in s_a.categories.iter().zip(&s_b.categories) {
+            if c_a.name != c_b.name
+                || c_a.checked != c_b.checked
+                || c_a.notes != c_b.notes
+                || c_a.items.len() != c_b.items.len()
+            {
+                return false;
+            }
+            for (i_a, i_b) in c_a.items.iter().zip(&c_b.items) {
+                if i_a.name != i_b.name
+                    || i_a.checked != i_b.checked
+                    || i_a.source != i_b.source
+                    || i_a.explicit_m_prefix != i_b.explicit_m_prefix
+                    || i_a.description != i_b.description
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
 pub fn reconcile_catalog_to_host(
     catalog: &Document,
     existing_host: Option<&Document>,
@@ -135,7 +170,7 @@ pub fn reconcile_catalog_to_host(
 
     let structure_changed = match existing_host {
         None => true,
-        Some(host) => host_doc != *host,
+        Some(host) => !is_structurally_equal(&host_doc, host),
     };
 
     ReconcileResult {
@@ -317,5 +352,20 @@ mod tests {
         let (catalog_diff, _) = parse_document(Path::new("packages.md"), catalog_diff_md);
         let res_diff = reconcile_catalog_to_host(&catalog_diff, Some(&host), &installed);
         assert!(res_diff.structure_changed);
+    }
+
+    #[test]
+    fn test_structure_changed_ignores_line_numbers() {
+        let catalog_md = "## [x] MAIN\n\n\n### [x] cat\n- [x] `git`\n";
+        let host_md = "## [x] MAIN\n### [x] cat\n- [x] `git`\n";
+        let (catalog, _) = parse_document(Path::new("packages.md"), catalog_md);
+        let (host, _) = parse_document(Path::new("host.md"), host_md);
+        let installed = InstalledPackages::default();
+
+        let res = reconcile_catalog_to_host(&catalog, Some(&host), &installed);
+        assert!(
+            !res.structure_changed,
+            "structure_changed must be false when content matches even if line numbers differ"
+        );
     }
 }
