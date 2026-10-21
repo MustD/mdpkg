@@ -14,7 +14,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | ID | Title | Target File | Area | Priority | Status |
 |---|---|---|---|---|---|
 | `CLN-01` | Fix Clippy redundant branch warning | `src/config.rs` | Cleanup | P0 | `[x]` |
-| `CLN-02` | Fix Clippy collapsible `if` and `format!` warnings | `src/markdown.rs` | Cleanup | P0 | `[ ]` |
+| `CLN-02` | Fix Clippy collapsible `if` and `format!` warnings | `src/markdown.rs` | Cleanup | P0 | `[x]` |
 | `CLN-03` | Fix Clippy collapsible `if` warning | `src/reconcile.rs` | Cleanup | P0 | `[ ]` |
 | `SEC-01` | Fix async-signal safety violation in signal handler | `src/privilege.rs` | Security | P0 | `[ ]` |
 | `SEC-02` | Add dangling Polkit session rule cleanup on startup | `src/privilege.rs` | Security | P1 | `[ ]` |
@@ -49,7 +49,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 - **Action**: Remove the redundant `else if cwd.join("packages.md").exists()` branch and keep the single `else { cwd.to_path_buf() }`.
 - **Verification**: `cargo clippy --all-targets` produces no warning for `config.rs`.
 
-#### [ ] Task `CLN-02`: Fix Clippy collapsible `if` and nested `format!` warnings in `markdown.rs`
+#### [x] Task `CLN-02`: Fix Clippy collapsible `if` and nested `format!` warnings in `markdown.rs`
 - **Location**: `src/markdown.rs:84-89`, `src/markdown.rs:282-290`, `src/markdown.rs:326-335`
 - **Issues**:
   1. Lines 84-89: Nested `if doc.title.is_none() && current_section.is_none()` under `if trimmed.starts_with("# ") ...` can be collapsed into a single condition (`clippy::collapsible_if`).

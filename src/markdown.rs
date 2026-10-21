@@ -81,11 +81,14 @@ pub fn parse_document(path: &Path, content: &str) -> (Document, Vec<ValidationIs
         let trimmed = line.trim();
 
         // Check for document title: # Title (only if at the top level outside sections)
-        if trimmed.starts_with("# ") && !trimmed.starts_with("## ") && !trimmed.starts_with("### ") {
-            if doc.title.is_none() && current_section.is_none() {
-                doc.title = Some(trimmed[2..].trim().to_string());
-                continue;
-            }
+        if trimmed.starts_with("# ")
+            && !trimmed.starts_with("## ")
+            && !trimmed.starts_with("### ")
+            && doc.title.is_none()
+            && current_section.is_none()
+        {
+            doc.title = Some(trimmed[2..].trim().to_string());
+            continue;
         }
 
         // Check for Category: ### ... (check ### before ## because ### starts with ##)
@@ -279,13 +282,14 @@ pub fn render_document(doc: &Document) -> String {
     }
 
     for (s_idx, section) in doc.sections.iter().enumerate() {
-        if s_idx > 0 || !doc.preamble.is_empty() || doc.title.is_some() {
-            if !out.ends_with("\n\n") && !out.is_empty() {
-                if out.ends_with('\n') {
-                    out.push('\n');
-                } else {
-                    out.push_str("\n\n");
-                }
+        if (s_idx > 0 || !doc.preamble.is_empty() || doc.title.is_some())
+            && !out.ends_with("\n\n")
+            && !out.is_empty()
+        {
+            if out.ends_with('\n') {
+                out.push('\n');
+            } else {
+                out.push_str("\n\n");
             }
         }
 
@@ -323,14 +327,11 @@ pub fn render_document(doc: &Document) -> String {
                 };
 
                 if item.description.is_empty() {
-                    out.push_str(&format!("- {} {}{}\n", item_chk, prefix, format!("`{}`", item.name)));
+                    out.push_str(&format!("- {} {}`{}`\n", item_chk, prefix, item.name));
                 } else {
                     out.push_str(&format!(
-                        "- {} {}{} — {}\n",
-                        item_chk,
-                        prefix,
-                        format!("`{}`", item.name),
-                        item.description
+                        "- {} {}`{}` — {}\n",
+                        item_chk, prefix, item.name, item.description
                     ));
                 }
             }
