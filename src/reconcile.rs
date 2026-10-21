@@ -38,11 +38,11 @@ pub fn reconcile_catalog_to_host(
 ) -> ReconcileResult {
     // Collect host section checkboxes
     let mut host_sections: HashMap<String, bool> = HashMap::new();
-    // Collect host category checkboxes: key (section_name, category_name)
+    // Collect host category checkboxes: key (section_name_lowercase, category_name_lowercase)
     let mut host_categories: HashMap<(String, Option<String>), bool> = HashMap::new();
-    // Collect host item checkboxes: key package_name -> checked
-    let mut host_items: HashMap<String, bool> = HashMap::new();
-    let mut host_packages: HashSet<String> = HashSet::new();
+    // Collect host item checkboxes: borrowed &str -> checked
+    let mut host_items: HashMap<&str, bool> = HashMap::new();
+    let mut host_packages: HashSet<&str> = HashSet::new();
 
     if let Some(host) = existing_host {
         for sec in &host.sections {
@@ -51,14 +51,14 @@ pub fn reconcile_catalog_to_host(
                 let cat_key = cat.name.as_ref().map(|n| n.to_lowercase());
                 host_categories.insert((sec.name.to_lowercase(), cat_key), cat.checked);
                 for item in &cat.items {
-                    host_items.insert(item.name.clone(), item.checked);
-                    host_packages.insert(item.name.clone());
+                    host_items.insert(item.name.as_str(), item.checked);
+                    host_packages.insert(item.name.as_str());
                 }
             }
         }
     }
 
-    let mut catalog_packages: HashSet<String> = HashSet::new();
+    let mut catalog_packages: HashSet<&str> = HashSet::new();
     let mut newly_added: Vec<(String, PackageSource, bool)> = Vec::new();
 
     let mut reconciled_sections: Vec<SectionBlock> = Vec::new();
@@ -76,16 +76,14 @@ pub fn reconcile_catalog_to_host(
                 .copied()
                 .unwrap_or(cat.checked);
 
-            let mut reconciled_items: Vec<PackageItem> = Vec::new();
+            let mut reconciled_items: Vec<PackageItem> = Vec::with_capacity(cat.items.len());
 
             for item in &cat.items {
-                catalog_packages.insert(item.name.clone());
+                catalog_packages.insert(item.name.as_str());
 
-                let (item_checked, is_new) = if let Some(&checked) = host_items.get(&item.name) {
-                    (checked, false)
-                } else {
-                    let default_checked = installed.is_installed(item.source, &item.name);
-                    (default_checked, true)
+                let (item_checked, is_new) = match host_items.get(item.name.as_str()) {
+                    Some(&checked) => (checked, false),
+                    None => (installed.is_installed(item.source, &item.name), true),
                 };
 
                 if is_new {
@@ -122,9 +120,9 @@ pub fn reconcile_catalog_to_host(
 
     // Determine packages present in host but removed from catalog
     let mut removed_from_catalog: Vec<String> = Vec::new();
-    for pkg in &host_packages {
+    for &pkg in &host_packages {
         if !catalog_packages.contains(pkg) {
-            removed_from_catalog.push(pkg.clone());
+            removed_from_catalog.push(pkg.to_string());
         }
     }
     removed_from_catalog.sort();
@@ -158,9 +156,9 @@ pub fn compute_sync_plan(
     let mut to_remove: Vec<PackageItem> = Vec::new();
     let mut skipped_installed_aur: Vec<String> = Vec::new();
 
-    let mut seen_install: HashSet<String> = HashSet::new();
-    let mut seen_remove: HashSet<String> = HashSet::new();
-    let mut seen_skipped_aur: HashSet<String> = HashSet::new();
+    let mut seen_install: HashSet<&str> = HashSet::new();
+    let mut seen_remove: HashSet<&str> = HashSet::new();
+    let mut seen_skipped_aur: HashSet<&str> = HashSet::new();
 
     if let Some(req_secs) = requested_sections {
         if !req_secs.is_empty() {
@@ -201,19 +199,19 @@ pub fn compute_sync_plan(
 
                 if effective_enabled {
                     if !is_inst {
-                        if seen_install.insert(item.name.clone()) {
+                        if seen_install.insert(item.name.as_str()) {
                             to_install.push(item.clone());
                         }
                     } else if item.source == PackageSource::Aur {
                         if force_aur {
-                            if seen_install.insert(item.name.clone()) {
+                            if seen_install.insert(item.name.as_str()) {
                                 to_install.push(item.clone());
                             }
-                        } else if seen_skipped_aur.insert(item.name.clone()) {
+                        } else if seen_skipped_aur.insert(item.name.as_str()) {
                             skipped_installed_aur.push(item.name.clone());
                         }
                     }
-                } else if is_inst && seen_remove.insert(item.name.clone()) {
+                } else if is_inst && seen_remove.insert(item.name.as_str()) {
                     to_remove.push(item.clone());
                 }
             }

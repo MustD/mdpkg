@@ -26,7 +26,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `PERF-01` | Replace string-rendering diff with structural equality | `src/reconcile.rs` | Performance | P1 | `[x]` |
 | `PERF-02` | Add fast-path prefix filters to avoid unnecessary Regex matching | `src/markdown.rs` | Performance | P1 | `[x]` |
 | `PERF-03` | Eliminate temporary allocations in `render_document` | `src/markdown.rs` | Performance | P2 | `[x]` |
-| `PERF-04` | Reduce redundant string clones in reconciliation | `src/reconcile.rs` | Performance | P2 | `[ ]` |
+| `PERF-04` | Reduce redundant string clones in reconciliation | `src/reconcile.rs` | Performance | P2 | `[x]` |
 | `TST-01` | Verify test suite and enforce zero warnings in CI/checks | Repository-wide | Quality Gate | P0 | `[ ]` |
 
 ---
@@ -198,7 +198,7 @@ This document tracks all identified code-quality improvements, simplifications, 
   - Pre-allocate buffer capacity (`String::with_capacity(content_len_hint)`).
 - **Verification**: `render_document` output is byte-for-byte identical.
 
-#### [ ] Task `PERF-04`: Reduce redundant string cloning in reconciliation
+#### [x] Task `PERF-04`: Reduce redundant string cloning in reconciliation
 - **Location**: `src/reconcile.rs:80-120`
 - **Issue**:
   - In `reconcile_catalog_to_host`, `item.name.clone()` and `item.description.clone()` are cloned multiple times (into `catalog_packages`, `newly_added`, `reconciled_items`).
