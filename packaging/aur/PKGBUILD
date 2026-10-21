@@ -10,7 +10,7 @@ depends=('pacman' 'pamac-cli' 'sudo')
 optdepends=('npm: for global npm package management')
 makedepends=('cargo')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha256sums=('7c47fca5179637a6af0f7becb0f59b539e01448c4a6afff6e5085ddbeaf0458f')
+sha256sums=('62634d662097f071ce850a87006a4d79b44c28746f5a91809f43eb8571f3a561')
 
 build() {
   cd "$pkgname-$pkgver"
