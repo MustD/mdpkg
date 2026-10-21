@@ -85,8 +85,6 @@ pub fn resolve_paths(
         } else {
             expanded
         }
-    } else if cwd.join("packages.md").exists() {
-        cwd.to_path_buf()
     } else {
         cwd.to_path_buf()
     };
