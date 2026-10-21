@@ -77,6 +77,40 @@ extern "C" fn sigint_handler(sig: libc::c_int) {
     }
 }
 
+pub fn resolve_current_username() -> Result<String, anyhow::Error> {
+    if let Ok(user) = std::env::var("USER") {
+        let trimmed = user.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    if let Ok(user) = std::env::var("LOGNAME") {
+        let trimmed = user.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    unsafe {
+        let uid = libc::getuid();
+        let pwd = libc::getpwuid(uid);
+        if !pwd.is_null() && !(*pwd).pw_name.is_null() {
+            let cstr = std::ffi::CStr::from_ptr((*pwd).pw_name);
+            if let Ok(s) = cstr.to_str() {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    return Ok(trimmed.to_string());
+                }
+            }
+        }
+    }
+    let output = Command::new("id").arg("-un").output()?;
+    let username = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if username.is_empty() {
+        anyhow::bail!("Failed to determine current username");
+    }
+    Ok(username)
+}
+
 impl PrivilegeSession {
     pub fn acquire() -> Result<Self, anyhow::Error> {
         // Register signal and exit handlers
@@ -96,11 +130,7 @@ impl PrivilegeSession {
         let _ = cleanup_stale_polkit_rule();
 
         // 2. Determine username
-        let output = Command::new("id").arg("-un").output()?;
-        let username = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if username.is_empty() {
-            anyhow::bail!("Failed to determine current username");
-        }
+        let username = resolve_current_username()?;
 
         // 3. Write Polkit rule
         let rule = polkit_rule_content(&username);
@@ -198,5 +228,11 @@ mod tests {
         let _ = tx.send(());
         let _ = handle.join();
         assert!(start.elapsed() < Duration::from_millis(500));
+    }
+
+    #[test]
+    fn test_resolve_current_username() {
+        let username = resolve_current_username().expect("should resolve current username");
+        assert!(!username.is_empty());
     }
 }

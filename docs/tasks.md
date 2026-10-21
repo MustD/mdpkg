@@ -19,7 +19,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `SEC-01` | Fix async-signal safety violation in signal handler | `src/privilege.rs` | Security | P0 | `[x]` |
 | `SEC-02` | Add dangling Polkit session rule cleanup on startup | `src/privilege.rs` | Security | P1 | `[x]` |
 | `SEC-03` | Replace keep-alive busy-sleep loop with condition variable / channel | `src/privilege.rs` | Performance / Safety | P1 | `[x]` |
-| `SEC-04` | Streamline privilege session username lookup | `src/privilege.rs` | Robustness | P2 | `[ ]` |
+| `SEC-04` | Streamline privilege session username lookup | `src/privilege.rs` | Robustness | P2 | `[x]` |
 | `SIM-01` | Deduplicate catalog/host reconciliation in commands | `src/commands.rs` | Simplification | P1 | `[ ]` |
 | `SIM-02` | Implement standard Rust conversion traits (`Display`, `FromStr`) | `src/model.rs` | Idiomatic Rust | P2 | `[ ]` |
 | `SIM-03` | Clean up path normalization and tilde expansion | `src/config.rs` | Simplification | P2 | `[ ]` |
@@ -99,7 +99,7 @@ This document tracks all identified code-quality improvements, simplifications, 
   - On `Drop`, send a shutdown message to immediately wake up and join the thread without waiting.
 - **Verification**: Background thread exits instantly upon drop without CPU polling wakeups.
 
-#### [ ] Task `SEC-04`: Streamline privilege session username resolution
+#### [x] Task `SEC-04`: Streamline privilege session username resolution
 - **Location**: `src/privilege.rs:60-65`
 - **Issue**:
   - Executes external command `id -un` via `Command::new("id")`.
