@@ -87,12 +87,21 @@ pub fn execute_command(cli: Cli, backend: &mut dyn SystemBackend) -> Result<(), 
 fn handle_config(cmd: ConfigCommand, paths: &ResolvedPaths) -> Result<(), anyhow::Error> {
     match cmd.action {
         ConfigSubcommand::SetDir { path } => {
-            save_data_dir(&paths.config_file, &path)?;
-            println!("Saved default data_dir = {}", path.display());
+            let saved = save_data_dir(&paths.config_file, &path)?;
+            println!("Saved default data_dir = {}", saved.display());
             Ok(())
         }
         ConfigSubcommand::Show => {
-            println!("Configuration File: {}", paths.config_file.display());
+            let cfg_status = if paths.config_file.exists() {
+                "present"
+            } else {
+                "not found (run `mdpkg config set-dir <PATH>` to configure default data_dir)"
+            };
+            println!(
+                "Configuration File: {} ({})",
+                paths.config_file.display(),
+                cfg_status
+            );
             println!("Active Data Dir:    {}", paths.data_dir.display());
             println!("Master Catalog:     {}", paths.catalog_path.display());
             println!("Host Checklist:     {}", paths.host_path.display());
@@ -100,6 +109,16 @@ fn handle_config(cmd: ConfigCommand, paths: &ResolvedPaths) -> Result<(), anyhow
             Ok(())
         }
     }
+}
+
+fn ensure_catalog_exists(paths: &ResolvedPaths) -> Result<(), anyhow::Error> {
+    if !paths.catalog_path.exists() {
+        anyhow::bail!(
+            "Catalog file does not exist at {} (use `mdpkg config set-dir <PATH>` to set a persistent default data directory or pass `--dir <PATH>`)",
+            paths.catalog_path.display()
+        );
+    }
+    Ok(())
 }
 
 fn handle_hooks(cmd: HooksCommand, paths: &ResolvedPaths) -> Result<(), anyhow::Error> {
@@ -153,9 +172,7 @@ fn handle_check(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    if !paths.catalog_path.exists() {
-        anyhow::bail!("Catalog file does not exist at {}", paths.catalog_path.display());
-    }
+    ensure_catalog_exists(paths)?;
 
     let catalog_content = fs::read_to_string(&paths.catalog_path)?;
     let (catalog_doc, catalog_issues) = parse_document(&paths.catalog_path, &catalog_content);
@@ -281,9 +298,7 @@ fn handle_sync(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    if !paths.catalog_path.exists() {
-        anyhow::bail!("Catalog file does not exist at {}", paths.catalog_path.display());
-    }
+    ensure_catalog_exists(paths)?;
 
     let catalog_content = fs::read_to_string(&paths.catalog_path)?;
     let (catalog_doc, issues) = parse_document(&paths.catalog_path, &catalog_content);
@@ -349,9 +364,7 @@ fn handle_add(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    if !paths.catalog_path.exists() {
-        anyhow::bail!("Catalog file does not exist at {}", paths.catalog_path.display());
-    }
+    ensure_catalog_exists(paths)?;
 
     let catalog_content = fs::read_to_string(&paths.catalog_path)?;
     let (mut catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
@@ -472,9 +485,7 @@ fn handle_enable(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    if !paths.catalog_path.exists() {
-        anyhow::bail!("Catalog file does not exist at {}", paths.catalog_path.display());
-    }
+    ensure_catalog_exists(paths)?;
 
     let catalog_content = fs::read_to_string(&paths.catalog_path)?;
     let (catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
@@ -518,9 +529,7 @@ fn handle_disable(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    if !paths.catalog_path.exists() {
-        anyhow::bail!("Catalog file does not exist at {}", paths.catalog_path.display());
-    }
+    ensure_catalog_exists(paths)?;
 
     let catalog_content = fs::read_to_string(&paths.catalog_path)?;
     let (catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
@@ -590,9 +599,7 @@ fn handle_list(
     paths: &ResolvedPaths,
     backend: &mut dyn SystemBackend,
 ) -> Result<(), anyhow::Error> {
-    if !paths.catalog_path.exists() {
-        anyhow::bail!("Catalog file does not exist at {}", paths.catalog_path.display());
-    }
+    ensure_catalog_exists(paths)?;
 
     let catalog_content = fs::read_to_string(&paths.catalog_path)?;
     let (catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);

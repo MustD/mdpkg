@@ -200,3 +200,84 @@ fn test_privileged_commands_trigger_backend_elevation() {
     execute_command(cli, &mut backend).unwrap();
     assert!(backend.elevated);
 }
+
+#[test]
+fn test_config_set_dir_relative_resolves_to_absolute_and_works_without_dir_flag_from_other_callsite() {
+    let dir = tempdir().unwrap();
+    let config_file = dir.path().join("config.toml");
+    let pkg_dir = dir.path().join("repo").join("mdpkg");
+    let other_dir = dir.path().join("elsewhere");
+    fs::create_dir_all(&pkg_dir).unwrap();
+    fs::create_dir_all(&other_dir).unwrap();
+
+    let catalog = pkg_dir.join("packages.md");
+    fs::write(
+        &catalog,
+        "# Packages\n\n## [x] MAIN — Core\n\n### [x] cli\n- [x] `git` — vcs\n",
+    )
+    .unwrap();
+
+    let mut backend = MockSystemBackend::default();
+    backend.installed.repo_and_aur.insert("git".to_string());
+
+    // Pass a relative path "." when running in pkg_dir, or a path with ".." segments
+    let sub_dir = pkg_dir.join("sub");
+    fs::create_dir_all(&sub_dir).unwrap();
+    let uncanonical_path = sub_dir.join("..");
+    let cli = Cli::try_parse_from([
+        "mdpkg",
+        "--config",
+        config_file.to_str().unwrap(),
+        "config",
+        "set-dir",
+        uncanonical_path.to_str().unwrap(),
+    ])
+    .unwrap();
+    execute_command(cli, &mut backend).unwrap();
+
+    let saved_toml = fs::read_to_string(&config_file).unwrap();
+    assert!(
+        !saved_toml.contains(".."),
+        "Expected canonicalized path without '..', got: {}",
+        saved_toml
+    );
+
+    // Now invoke `mdpkg check` without `--dir` while our current process cwd is the crate root (not pkg_dir!)
+    let cli_check = Cli::try_parse_from([
+        "mdpkg",
+        "--config",
+        config_file.to_str().unwrap(),
+        "--host",
+        "laptop",
+        "check",
+    ])
+    .unwrap();
+    execute_command(cli_check, &mut backend).unwrap();
+}
+
+#[test]
+fn test_missing_catalog_error_guides_user_to_config_set_dir() {
+    let dir = tempdir().unwrap();
+    let config_file = dir.path().join("nonexistent_config.toml");
+    let empty_dir = dir.path().join("empty");
+    fs::create_dir_all(&empty_dir).unwrap();
+
+    let mut backend = MockSystemBackend::default();
+    let cli = Cli::try_parse_from([
+        "mdpkg",
+        "--config",
+        config_file.to_str().unwrap(),
+        "--dir",
+        empty_dir.to_str().unwrap(),
+        "check",
+    ])
+    .unwrap();
+
+    let err = execute_command(cli, &mut backend).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("mdpkg config set-dir"),
+        "Expected error message to hint `mdpkg config set-dir`, got: {}",
+        msg
+    );
+}
