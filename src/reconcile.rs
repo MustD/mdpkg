@@ -214,10 +214,8 @@ pub fn compute_sync_plan(
                             skipped_installed_aur.push(item.name.clone());
                         }
                     }
-                } else if is_inst {
-                    if seen_remove.insert(item.name.clone()) {
-                        to_remove.push(item.clone());
-                    }
+                } else if is_inst && seen_remove.insert(item.name.clone()) {
+                    to_remove.push(item.clone());
                 }
             }
         }

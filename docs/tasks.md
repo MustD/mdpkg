@@ -15,7 +15,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 |---|---|---|---|---|---|
 | `CLN-01` | Fix Clippy redundant branch warning | `src/config.rs` | Cleanup | P0 | `[x]` |
 | `CLN-02` | Fix Clippy collapsible `if` and `format!` warnings | `src/markdown.rs` | Cleanup | P0 | `[x]` |
-| `CLN-03` | Fix Clippy collapsible `if` warning | `src/reconcile.rs` | Cleanup | P0 | `[ ]` |
+| `CLN-03` | Fix Clippy collapsible `if` warning | `src/reconcile.rs` | Cleanup | P0 | `[x]` |
 | `SEC-01` | Fix async-signal safety violation in signal handler | `src/privilege.rs` | Security | P0 | `[ ]` |
 | `SEC-02` | Add dangling Polkit session rule cleanup on startup | `src/privilege.rs` | Security | P1 | `[ ]` |
 | `SEC-03` | Replace keep-alive busy-sleep loop with condition variable / channel | `src/privilege.rs` | Performance / Safety | P1 | `[ ]` |
@@ -60,7 +60,7 @@ This document tracks all identified code-quality improvements, simplifications, 
   - Simplify format strings to inline the backticks directly (e.g. `"- {} `{}` — {}\n"` or `format_args!`).
 - **Verification**: `cargo clippy --all-targets` produces no warning for `markdown.rs`.
 
-#### [ ] Task `CLN-03`: Fix Clippy collapsible `if` warning in `reconcile.rs`
+#### [x] Task `CLN-03`: Fix Clippy collapsible `if` warning in `reconcile.rs`
 - **Location**: `src/reconcile.rs:217-221`
 - **Issue**: `else if is_inst { if seen_remove.insert(item.name.clone()) { ... } }` generates `clippy::collapsible_if`.
 - **Action**: Collapse into `else if is_inst && seen_remove.insert(item.name.clone()) { ... }`.
