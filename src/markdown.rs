@@ -270,10 +270,26 @@ pub fn validate_document(path: &Path, content: &str) -> Vec<ValidationIssue> {
 }
 
 pub fn render_document(doc: &Document) -> String {
-    let mut out = String::new();
+    use std::fmt::Write;
+
+    let hint = doc.preamble.iter().map(|l| l.len() + 1).sum::<usize>()
+        + doc.sections.len() * 64
+        + doc
+            .sections
+            .iter()
+            .map(|s| {
+                s.categories.len() * 32
+                    + s.categories
+                        .iter()
+                        .map(|c| c.items.len() * 48 + c.notes.iter().map(|n| n.len() + 1).sum::<usize>())
+                        .sum::<usize>()
+            })
+            .sum::<usize>()
+        + 128;
+    let mut out = String::with_capacity(hint);
 
     if let Some(title) = &doc.title {
-        out.push_str(&format!("# {}\n\n", title));
+        let _ = write!(out, "# {}\n\n", title);
     }
 
     for line in &doc.preamble {
@@ -295,16 +311,16 @@ pub fn render_document(doc: &Document) -> String {
 
         let chk = if section.checked { "[x]" } else { "[ ]" };
         if section.description.is_empty() {
-            out.push_str(&format!("## {} {}\n", chk, section.name));
+            let _ = writeln!(out, "## {} {}", chk, section.name);
         } else {
-            out.push_str(&format!("## {} {} — {}\n", chk, section.name, section.description));
+            let _ = writeln!(out, "## {} {} — {}", chk, section.name, section.description);
         }
 
         for category in &section.categories {
             out.push('\n');
             if let Some(cat_name) = &category.name {
                 let cat_chk = if category.checked { "[x]" } else { "[ ]" };
-                out.push_str(&format!("### {} {}\n", cat_chk, cat_name));
+                let _ = writeln!(out, "### {} {}", cat_chk, cat_name);
             }
 
             for note in &category.notes {
@@ -327,12 +343,13 @@ pub fn render_document(doc: &Document) -> String {
                 };
 
                 if item.description.is_empty() {
-                    out.push_str(&format!("- {} {}`{}`\n", item_chk, prefix, item.name));
+                    let _ = writeln!(out, "- {} {}`{}`", item_chk, prefix, item.name);
                 } else {
-                    out.push_str(&format!(
-                        "- {} {}`{}` — {}\n",
+                    let _ = writeln!(
+                        out,
+                        "- {} {}`{}` — {}",
                         item_chk, prefix, item.name, item.description
-                    ));
+                    );
                 }
             }
         }

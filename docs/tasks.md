@@ -25,7 +25,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `SIM-03` | Clean up path normalization and tilde expansion | `src/config.rs` | Simplification | P2 | `[x]` |
 | `PERF-01` | Replace string-rendering diff with structural equality | `src/reconcile.rs` | Performance | P1 | `[x]` |
 | `PERF-02` | Add fast-path prefix filters to avoid unnecessary Regex matching | `src/markdown.rs` | Performance | P1 | `[x]` |
-| `PERF-03` | Eliminate temporary allocations in `render_document` | `src/markdown.rs` | Performance | P2 | `[ ]` |
+| `PERF-03` | Eliminate temporary allocations in `render_document` | `src/markdown.rs` | Performance | P2 | `[x]` |
 | `PERF-04` | Reduce redundant string clones in reconciliation | `src/reconcile.rs` | Performance | P2 | `[ ]` |
 | `TST-01` | Verify test suite and enforce zero warnings in CI/checks | Repository-wide | Quality Gate | P0 | `[ ]` |
 
@@ -189,7 +189,7 @@ This document tracks all identified code-quality improvements, simplifications, 
   - Skip non-matching lines immediately.
 - **Verification**: `cargo test` passes with identical parse results.
 
-#### [ ] Task `PERF-03`: Eliminate temporary allocations in `render_document`
+#### [x] Task `PERF-03`: Eliminate temporary allocations in `render_document`
 - **Location**: `src/markdown.rs:269-341`
 - **Issue**:
   - Repeated `out.push_str(&format!(...))` allocates a temporary `String` for every heading, note, and package item.
