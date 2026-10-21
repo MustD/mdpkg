@@ -23,7 +23,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `SIM-01` | Deduplicate catalog/host reconciliation in commands | `src/commands.rs` | Simplification | P1 | `[x]` |
 | `SIM-02` | Implement standard Rust conversion traits (`Display`, `FromStr`) | `src/model.rs` | Idiomatic Rust | P2 | `[x]` |
 | `SIM-03` | Clean up path normalization and tilde expansion | `src/config.rs` | Simplification | P2 | `[x]` |
-| `PERF-01` | Replace string-rendering diff with structural equality | `src/reconcile.rs` | Performance | P1 | `[ ]` |
+| `PERF-01` | Replace string-rendering diff with structural equality | `src/reconcile.rs` | Performance | P1 | `[x]` |
 | `PERF-02` | Add fast-path prefix filters to avoid unnecessary Regex matching | `src/markdown.rs` | Performance | P1 | `[ ]` |
 | `PERF-03` | Eliminate temporary allocations in `render_document` | `src/markdown.rs` | Performance | P2 | `[ ]` |
 | `PERF-04` | Reduce redundant string clones in reconciliation | `src/reconcile.rs` | Performance | P2 | `[ ]` |
@@ -164,7 +164,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 
 ### Phase 4: Performance & Memory Optimizations (P1 / P2)
 
-#### [ ] Task `PERF-01`: Replace markdown string serialization diff with structural equality
+#### [x] Task `PERF-01`: Replace markdown string serialization diff with structural equality
 - **Location**: `src/reconcile.rs:139-143`
 - **Issue**:
   ```rust

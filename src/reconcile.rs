@@ -1,4 +1,3 @@
-use crate::markdown::render_document;
 use crate::model::{CategoryBlock, Document, PackageItem, PackageSource, SectionBlock};
 use std::collections::{HashMap, HashSet};
 
@@ -138,7 +137,7 @@ pub fn reconcile_catalog_to_host(
 
     let structure_changed = match existing_host {
         None => true,
-        Some(host) => render_document(&host_doc) != render_document(host),
+        Some(host) => host_doc != *host,
     };
 
     ReconcileResult {
@@ -292,5 +291,21 @@ mod tests {
         // Item checkbox inside disabled category remains [x] when rendered back
         let rendered = render_document(&host);
         assert!(rendered.contains("### [ ] disabled-cat\n- [x] `git` — vcs"));
+    }
+
+    #[test]
+    fn test_structure_changed_when_host_differs() {
+        let catalog_md = "## [x] MAIN\n### [x] cat\n- [x] `git`\n";
+        let (catalog, _) = parse_document(Path::new("packages.md"), catalog_md);
+        let (host, _) = parse_document(Path::new("host.md"), catalog_md);
+        let installed = InstalledPackages::default();
+
+        let res_same = reconcile_catalog_to_host(&catalog, Some(&host), &installed);
+        assert!(!res_same.structure_changed);
+
+        let catalog_diff_md = "## [x] MAIN\n### [x] cat\n- [x] `git`\n- [x] `curl`\n";
+        let (catalog_diff, _) = parse_document(Path::new("packages.md"), catalog_diff_md);
+        let res_diff = reconcile_catalog_to_host(&catalog_diff, Some(&host), &installed);
+        assert!(res_diff.structure_changed);
     }
 }
