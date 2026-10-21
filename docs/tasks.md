@@ -17,7 +17,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `CLN-02` | Fix Clippy collapsible `if` and `format!` warnings | `src/markdown.rs` | Cleanup | P0 | `[x]` |
 | `CLN-03` | Fix Clippy collapsible `if` warning | `src/reconcile.rs` | Cleanup | P0 | `[x]` |
 | `SEC-01` | Fix async-signal safety violation in signal handler | `src/privilege.rs` | Security | P0 | `[x]` |
-| `SEC-02` | Add dangling Polkit session rule cleanup on startup | `src/privilege.rs` | Security | P1 | `[ ]` |
+| `SEC-02` | Add dangling Polkit session rule cleanup on startup | `src/privilege.rs` | Security | P1 | `[x]` |
 | `SEC-03` | Replace keep-alive busy-sleep loop with condition variable / channel | `src/privilege.rs` | Performance / Safety | P1 | `[ ]` |
 | `SEC-04` | Streamline privilege session username lookup | `src/privilege.rs` | Robustness | P2 | `[ ]` |
 | `SIM-01` | Deduplicate catalog/host reconciliation in commands | `src/commands.rs` | Simplification | P1 | `[ ]` |
@@ -80,7 +80,7 @@ This document tracks all identified code-quality improvements, simplifications, 
   - Ensure cleanup is reliably triggered on `Drop` and standard process termination.
 - **Verification**: Verify `cargo test` and manual termination (`SIGINT` during sync) exits cleanly without hangs.
 
-#### [ ] Task `SEC-02`: Clean up dangling Polkit session rules on startup
+#### [x] Task `SEC-02`: Clean up dangling Polkit session rules on startup
 - **Location**: `src/privilege.rs` & `src/commands.rs`
 - **Issue**:
   - If `mdpkg` is killed via uncatchable `SIGKILL` (`kill -9`) or system power failure, `/etc/polkit-1/rules.d/90-mdpkg-session.rules` remains on disk.

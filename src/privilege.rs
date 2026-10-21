@@ -25,6 +25,24 @@ pub struct PrivilegeSession {
 
 const POLKIT_RULE_PATH: &str = "/etc/polkit-1/rules.d/90-mdpkg-session.rules";
 
+pub fn cleanup_stale_polkit_rule() -> Result<bool, anyhow::Error> {
+    cleanup_stale_polkit_rule_at(std::path::Path::new(POLKIT_RULE_PATH))
+}
+
+pub fn cleanup_stale_polkit_rule_at(path: &std::path::Path) -> Result<bool, anyhow::Error> {
+    if path.exists() {
+        let status = Command::new("sudo")
+            .args(["rm", "-f", path.to_str().unwrap_or(POLKIT_RULE_PATH)])
+            .status()?;
+        if !status.success() {
+            eprintln!("Warning: failed to remove stale polkit session rule at {}", path.display());
+            return Ok(false);
+        }
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 pub(crate) extern "C" fn async_signal_safe_cleanup() {
     unsafe {
         let pid = libc::fork();
@@ -75,6 +93,9 @@ impl PrivilegeSession {
         if !status.success() {
             anyhow::bail!("Failed to acquire sudo credentials");
         }
+
+        // Clean up any stale rule from an earlier aborted run before creating a new one
+        let _ = cleanup_stale_polkit_rule();
 
         // 2. Determine username
         let output = Command::new("id").arg("-un").output()?;
@@ -158,5 +179,12 @@ mod tests {
     #[test]
     fn test_async_signal_safe_cleanup_runs_without_panicking() {
         async_signal_safe_cleanup();
+    }
+
+    #[test]
+    fn test_cleanup_stale_polkit_rule_when_missing() {
+        let nonexistent = std::path::Path::new("/tmp/nonexistent-rule-file-test.rules");
+        let cleaned = cleanup_stale_polkit_rule_at(nonexistent).expect("should succeed when file does not exist");
+        assert!(!cleaned);
     }
 }

@@ -67,6 +67,9 @@ pub fn execute_command(cli: Cli, backend: &mut dyn SystemBackend) -> Result<(), 
         &sys_hostname,
     )?;
 
+    // Clean up any dangling stale polkit session rule from an aborted session
+    let _ = crate::privilege::cleanup_stale_polkit_rule();
+
     let command = match cli.command {
         Some(cmd) => cmd,
         None => {
