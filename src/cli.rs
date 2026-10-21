@@ -1,5 +1,6 @@
 use crate::config::ResolvedPaths;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
+use clap_complete::Shell;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
@@ -18,6 +19,7 @@ pub struct Cli {
         short = 'd',
         long = "dir",
         env = "MDPKG_DIR",
+        value_hint = ValueHint::DirPath,
         help = "Path to mdpkg data directory (containing packages.md)"
     )]
     pub dir: Option<PathBuf>,
@@ -32,6 +34,7 @@ pub struct Cli {
     #[arg(
         short = 'c',
         long = "config",
+        value_hint = ValueHint::FilePath,
         help = "Custom path to config.toml (defaults to ~/.config/mdpkg/config.toml)"
     )]
     pub config: Option<PathBuf>,
@@ -119,6 +122,21 @@ reports pending catalog-to-host sync diffs, and lists uninstalled/unwanted packa
 non-interactive CLI flags, and hook creation rules for automated agents."
     )]
     AiHelp,
+
+    #[command(
+        about = "Generate shell completion scripts to stdout",
+        long_about = "Outputs a static completion script for the specified shell (bash, zsh, fish, elvish, powershell)."
+    )]
+    Completions(CompletionsArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct CompletionsArgs {
+    #[arg(
+        value_enum,
+        help = "Target shell (bash, zsh, fish, elvish, powershell)"
+    )]
+    pub shell: Shell,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -238,7 +256,10 @@ pub enum HooksSubcommand {
     Run {
         #[arg(help = "Package name")]
         package: String,
-        #[arg(help = "Hook stage (preInstall, postInstall, preRemoval, postRemoval)")]
+        #[arg(
+            value_parser = ["preInstall", "postInstall", "preRemoval", "postRemoval"],
+            help = "Hook stage (preInstall, postInstall, preRemoval, postRemoval)"
+        )]
         stage: String,
     },
 }
@@ -253,7 +274,7 @@ pub struct ConfigCommand {
 pub enum ConfigSubcommand {
     #[command(about = "Set default data directory path in config.toml")]
     SetDir {
-        #[arg(help = "Directory path")]
+        #[arg(value_hint = ValueHint::DirPath, help = "Directory path")]
         path: PathBuf,
     },
 
@@ -296,6 +317,8 @@ pub fn render_ai_help(paths: &ResolvedPaths) -> String {
   `mdpkg check`
 - Full system update:
   `mdpkg update --no-confirm`
+- Generate shell completions:
+  `mdpkg completions <bash|zsh|fish|elvish|powershell>`
 "#,
         paths.data_dir.display(),
         paths.catalog_path.display(),

@@ -1,8 +1,10 @@
 use crate::cli::{
-    AddArgs, CheckArgs, Cli, CliPackageSource, Commands, ConfigCommand, ConfigSubcommand,
-    DisableArgs, HooksCommand, HooksSubcommand, ListArgs, PackageTargetArgs, RemoveArgs,
-    SyncArgs, UpdateArgs, render_ai_help,
+    AddArgs, CheckArgs, Cli, CliPackageSource, Commands, CompletionsArgs, ConfigCommand,
+    ConfigSubcommand, DisableArgs, HooksCommand, HooksSubcommand, ListArgs, PackageTargetArgs,
+    RemoveArgs, SyncArgs, UpdateArgs, render_ai_help,
 };
+use clap::CommandFactory;
+use clap_complete::{Shell, generate};
 use crate::config::{ResolvedPaths, resolve_paths, save_data_dir};
 use crate::hooks::{discover_hooks, init_hooks_dir, run_hook, validate_hooks};
 use crate::markdown::{
@@ -42,7 +44,17 @@ fn get_default_config_path() -> PathBuf {
     }
 }
 
+pub fn generate_completions(shell: Shell, buf: &mut dyn std::io::Write) {
+    let mut cmd = Cli::command();
+    generate(shell, &mut cmd, "mdpkg", buf);
+}
+
 pub fn execute_command(cli: Cli, backend: &mut dyn SystemBackend) -> Result<(), anyhow::Error> {
+    if let Some(Commands::Completions(CompletionsArgs { shell })) = cli.command {
+        generate_completions(shell, &mut std::io::stdout());
+        return Ok(());
+    }
+
     let config_file = cli.config.clone().unwrap_or_else(get_default_config_path);
     let cwd = env::current_dir()?;
     let sys_hostname = get_system_hostname();
@@ -71,6 +83,7 @@ pub fn execute_command(cli: Cli, backend: &mut dyn SystemBackend) -> Result<(), 
             println!("{}", render_ai_help(&paths));
             Ok(())
         }
+        Commands::Completions(_) => unreachable!("Handled before path resolution"),
         Commands::Config(cmd) => handle_config(cmd, &paths),
         Commands::Hooks(cmd) => handle_hooks(cmd, &paths),
         Commands::Check(args) => handle_check(args, &paths, backend),

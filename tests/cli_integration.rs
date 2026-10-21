@@ -281,3 +281,38 @@ fn test_missing_catalog_error_guides_user_to_config_set_dir() {
         msg
     );
 }
+
+#[test]
+fn test_completions_subcommand_parses_and_generates_scripts_for_all_shells() {
+    use clap_complete::Shell;
+    use mdpkg::commands::generate_completions;
+
+    for (shell_arg, shell_enum) in [
+        ("bash", Shell::Bash),
+        ("zsh", Shell::Zsh),
+        ("fish", Shell::Fish),
+        ("elvish", Shell::Elvish),
+        ("powershell", Shell::PowerShell),
+    ] {
+        let cli = Cli::try_parse_from(["mdpkg", "completions", shell_arg]).unwrap();
+        let mut backend = MockSystemBackend::default();
+        execute_command(cli, &mut backend).unwrap();
+
+        let mut buf = Vec::new();
+        generate_completions(shell_enum, &mut buf);
+        let script = String::from_utf8(buf).unwrap();
+        assert!(!script.is_empty(), "Expected non-empty script for {}", shell_arg);
+        assert!(
+            script.contains("mdpkg") && script.contains("sync") && script.contains("completions"),
+            "Expected subcommands in {} script, got: {}",
+            shell_arg,
+            script
+        );
+    }
+}
+
+#[test]
+fn test_hooks_run_stage_validates_possible_values_for_completions() {
+    assert!(Cli::try_parse_from(["mdpkg", "hooks", "run", "git", "postInstall"]).is_ok());
+    assert!(Cli::try_parse_from(["mdpkg", "hooks", "run", "git", "invalidStage"]).is_err());
+}

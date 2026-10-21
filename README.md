@@ -150,6 +150,21 @@ Print a self-contained automation manual with resolved machine paths:
 mdpkg ai-help
 ```
 
+### 7. Shell Completions
+
+Generate completion scripts for `bash`, `zsh`, `fish`, `elvish`, or `powershell`:
+
+```bash
+# Bash (~/.bashrc)
+source <(mdpkg completions bash)
+
+# Zsh (~/.zshrc)
+source <(mdpkg completions zsh)
+
+# Fish (~/.config/fish/config.fish)
+mdpkg completions fish | source
+```
+
 ---
 
 ## Lifecycle Hooks
