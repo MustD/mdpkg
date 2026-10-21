@@ -25,6 +25,26 @@ pub struct PrivilegeSession {
 
 const POLKIT_RULE_PATH: &str = "/etc/polkit-1/rules.d/90-mdpkg-session.rules";
 
+pub(crate) extern "C" fn async_signal_safe_cleanup() {
+    unsafe {
+        let pid = libc::fork();
+        if pid == 0 {
+            let sudo_path = b"/usr/bin/sudo\0".as_ptr() as *const libc::c_char;
+            let arg_sudo = b"sudo\0".as_ptr() as *const libc::c_char;
+            let arg_rm = b"rm\0".as_ptr() as *const libc::c_char;
+            let arg_f = b"-f\0".as_ptr() as *const libc::c_char;
+            let arg_rule = b"/etc/polkit-1/rules.d/90-mdpkg-session.rules\0".as_ptr() as *const libc::c_char;
+            let args = [arg_sudo, arg_rm, arg_f, arg_rule, std::ptr::null()];
+            let env = [std::ptr::null()];
+            libc::execve(sudo_path, args.as_ptr(), env.as_ptr());
+            libc::_exit(1);
+        } else if pid > 0 {
+            let mut status = 0;
+            libc::waitpid(pid, &mut status, 0);
+        }
+    }
+}
+
 extern "C" fn cleanup_polkit_rule() {
     let _ = Command::new("sudo")
         .args(["rm", "-f", POLKIT_RULE_PATH])
@@ -34,7 +54,7 @@ extern "C" fn cleanup_polkit_rule() {
 }
 
 extern "C" fn sigint_handler(sig: libc::c_int) {
-    cleanup_polkit_rule();
+    async_signal_safe_cleanup();
     unsafe {
         libc::signal(sig, libc::SIG_DFL);
         libc::raise(sig);
@@ -133,5 +153,10 @@ mod tests {
         assert!(rule.contains("org.manjaro.pamac.commit"));
         assert!(rule.contains("subject.user == \"testuser\""));
         assert!(rule.contains("polkit.Result.YES"));
+    }
+
+    #[test]
+    fn test_async_signal_safe_cleanup_runs_without_panicking() {
+        async_signal_safe_cleanup();
     }
 }

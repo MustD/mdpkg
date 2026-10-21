@@ -16,7 +16,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `CLN-01` | Fix Clippy redundant branch warning | `src/config.rs` | Cleanup | P0 | `[x]` |
 | `CLN-02` | Fix Clippy collapsible `if` and `format!` warnings | `src/markdown.rs` | Cleanup | P0 | `[x]` |
 | `CLN-03` | Fix Clippy collapsible `if` warning | `src/reconcile.rs` | Cleanup | P0 | `[x]` |
-| `SEC-01` | Fix async-signal safety violation in signal handler | `src/privilege.rs` | Security | P0 | `[ ]` |
+| `SEC-01` | Fix async-signal safety violation in signal handler | `src/privilege.rs` | Security | P0 | `[x]` |
 | `SEC-02` | Add dangling Polkit session rule cleanup on startup | `src/privilege.rs` | Security | P1 | `[ ]` |
 | `SEC-03` | Replace keep-alive busy-sleep loop with condition variable / channel | `src/privilege.rs` | Performance / Safety | P1 | `[ ]` |
 | `SEC-04` | Streamline privilege session username lookup | `src/privilege.rs` | Robustness | P2 | `[ ]` |
@@ -70,7 +70,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 
 ### Phase 2: Security & Privilege Session Hardening (P0 / P1)
 
-#### [ ] Task `SEC-01`: Fix Async-Signal-Safety violation in signal handlers
+#### [x] Task `SEC-01`: Fix Async-Signal-Safety violation in signal handlers
 - **Location**: `src/privilege.rs:28-43`
 - **Issue**:
   - `sigint_handler` invokes `cleanup_polkit_rule()`, which calls `Command::new("sudo").args(["rm", "-f", POLKIT_RULE_PATH]).status()`.
