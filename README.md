@@ -34,7 +34,7 @@ yay -S mdpkg
 Download the prebuilt `.pkg.tar.zst` package from the [latest GitHub Release](https://github.com/MustD/mdpkg/releases/latest) and install with `pacman`:
 
 ```bash
-sudo pacman -U https://github.com/MustD/mdpkg/releases/download/v0.1.0/mdpkg-0.1.0-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/MustD/mdpkg/releases/download/v0.1.1/mdpkg-0.1.1-1-x86_64.pkg.tar.zst
 ```
 
 ### From Source

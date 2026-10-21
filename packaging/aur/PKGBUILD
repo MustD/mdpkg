@@ -1,6 +1,6 @@
 # Maintainer: mustd
 pkgname=mdpkg
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="Declarative multi-host package manager for Manjaro Linux via Markdown checklists"
 arch=('x86_64' 'aarch64')
@@ -31,4 +31,7 @@ package() {
   install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  "target/release/$pkgname" completions bash | install -Dm644 /dev/stdin "$pkgdir/usr/share/bash-completion/completions/$pkgname"
+  "target/release/$pkgname" completions zsh  | install -Dm644 /dev/stdin "$pkgdir/usr/share/zsh/site-functions/_$pkgname"
+  "target/release/$pkgname" completions fish | install -Dm644 /dev/stdin "$pkgdir/usr/share/fish/vendor_completions.d/$pkgname.fish"
 }
