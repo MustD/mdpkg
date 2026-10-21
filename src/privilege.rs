@@ -1,7 +1,5 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -19,7 +17,7 @@ pub fn polkit_rule_content(username: &str) -> String {
 
 pub struct PrivilegeSession {
     pub username: String,
-    stop_flag: Arc<AtomicBool>,
+    stop_sender: Option<std::sync::mpsc::SyncSender<()>>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -120,29 +118,29 @@ impl PrivilegeSession {
             eprintln!("Warning: failed to write polkit session rule at {}", POLKIT_RULE_PATH);
         }
 
-        // 4. Spawn background keep-alive thread
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let flag_clone = Arc::clone(&stop_flag);
+        // 4. Spawn background keep-alive thread with channel-based wakeup
+        let (stop_sender, stop_receiver) = std::sync::mpsc::sync_channel::<()>(0);
 
         let handle = thread::spawn(move || {
-            while !flag_clone.load(Ordering::Relaxed) {
-                for _ in 0..500 {
-                    if flag_clone.load(Ordering::Relaxed) {
-                        return;
+            loop {
+                match stop_receiver.recv_timeout(Duration::from_secs(50)) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        break;
                     }
-                    thread::sleep(Duration::from_millis(100));
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        let _ = Command::new("sudo")
+                            .args(["-n", "-v"])
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status();
+                    }
                 }
-                let _ = Command::new("sudo")
-                    .args(["-n", "-v"])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
             }
         });
 
         Ok(Self {
             username,
-            stop_flag,
+            stop_sender: Some(stop_sender),
             handle: Some(handle),
         })
     }
@@ -150,17 +148,14 @@ impl PrivilegeSession {
 
 impl Drop for PrivilegeSession {
     fn drop(&mut self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
+        if let Some(sender) = self.stop_sender.take() {
+            let _ = sender.send(());
+        }
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
 
-        // Remove polkit rule
-        let _ = Command::new("sudo")
-            .args(["rm", "-f", POLKIT_RULE_PATH])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        cleanup_polkit_rule();
     }
 }
 
@@ -186,5 +181,22 @@ mod tests {
         let nonexistent = std::path::Path::new("/tmp/nonexistent-rule-file-test.rules");
         let cleaned = cleanup_stale_polkit_rule_at(nonexistent).expect("should succeed when file does not exist");
         assert!(!cleaned);
+    }
+
+    #[test]
+    fn test_keepalive_worker_terminates_immediately_on_shutdown() {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<()>(0);
+        let start = std::time::Instant::now();
+        let handle = std::thread::spawn(move || {
+            loop {
+                match rx.recv_timeout(Duration::from_secs(50)) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                }
+            }
+        });
+        let _ = tx.send(());
+        let _ = handle.join();
+        assert!(start.elapsed() < Duration::from_millis(500));
     }
 }

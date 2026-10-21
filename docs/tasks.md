@@ -18,7 +18,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `CLN-03` | Fix Clippy collapsible `if` warning | `src/reconcile.rs` | Cleanup | P0 | `[x]` |
 | `SEC-01` | Fix async-signal safety violation in signal handler | `src/privilege.rs` | Security | P0 | `[x]` |
 | `SEC-02` | Add dangling Polkit session rule cleanup on startup | `src/privilege.rs` | Security | P1 | `[x]` |
-| `SEC-03` | Replace keep-alive busy-sleep loop with condition variable / channel | `src/privilege.rs` | Performance / Safety | P1 | `[ ]` |
+| `SEC-03` | Replace keep-alive busy-sleep loop with condition variable / channel | `src/privilege.rs` | Performance / Safety | P1 | `[x]` |
 | `SEC-04` | Streamline privilege session username lookup | `src/privilege.rs` | Robustness | P2 | `[ ]` |
 | `SIM-01` | Deduplicate catalog/host reconciliation in commands | `src/commands.rs` | Simplification | P1 | `[ ]` |
 | `SIM-02` | Implement standard Rust conversion traits (`Display`, `FromStr`) | `src/model.rs` | Idiomatic Rust | P2 | `[ ]` |
@@ -89,7 +89,7 @@ This document tracks all identified code-quality improvements, simplifications, 
   - When acquiring privileges or during initial command startup, check if a stale `/etc/polkit-1/rules.d/90-mdpkg-session.rules` exists from a previous aborted run and ensure it is cleaned up or properly re-managed.
 - **Verification**: Unit test / simulated stale rule check.
 
-#### [ ] Task `SEC-03`: Replace keep-alive busy-sleep loop with condition variable / channel
+#### [x] Task `SEC-03`: Replace keep-alive busy-sleep loop with condition variable / channel
 - **Location**: `src/privilege.rs:86-100`
 - **Issue**:
   - The background thread runs a loop with 500 iterations of `thread::sleep(Duration::from_millis(100))` to check an atomic boolean before running `sudo -n -v`.
