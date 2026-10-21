@@ -20,7 +20,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `SEC-02` | Add dangling Polkit session rule cleanup on startup | `src/privilege.rs` | Security | P1 | `[x]` |
 | `SEC-03` | Replace keep-alive busy-sleep loop with condition variable / channel | `src/privilege.rs` | Performance / Safety | P1 | `[x]` |
 | `SEC-04` | Streamline privilege session username lookup | `src/privilege.rs` | Robustness | P2 | `[x]` |
-| `SIM-01` | Deduplicate catalog/host reconciliation in commands | `src/commands.rs` | Simplification | P1 | `[ ]` |
+| `SIM-01` | Deduplicate catalog/host reconciliation in commands | `src/commands.rs` | Simplification | P1 | `[x]` |
 | `SIM-02` | Implement standard Rust conversion traits (`Display`, `FromStr`) | `src/model.rs` | Idiomatic Rust | P2 | `[ ]` |
 | `SIM-03` | Clean up path normalization and tilde expansion | `src/config.rs` | Simplification | P2 | `[ ]` |
 | `PERF-01` | Replace string-rendering diff with structural equality | `src/reconcile.rs` | Performance | P1 | `[ ]` |
@@ -112,7 +112,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 
 ### Phase 3: Code Simplification & Deduplication (P1 / P2)
 
-#### [ ] Task `SIM-01`: Deduplicate catalog/host loading and reconciliation in commands
+#### [x] Task `SIM-01`: Deduplicate catalog/host loading and reconciliation in commands
 - **Location**: `src/commands.rs:310-585`
 - **Issue**:
   - `handle_sync`, `handle_add`, `handle_enable`, `handle_disable`, and `handle_remove` duplicate the same 20-30 lines:
