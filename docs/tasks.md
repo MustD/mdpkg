@@ -22,7 +22,7 @@ This document tracks all identified code-quality improvements, simplifications, 
 | `SEC-04` | Streamline privilege session username lookup | `src/privilege.rs` | Robustness | P2 | `[x]` |
 | `SIM-01` | Deduplicate catalog/host reconciliation in commands | `src/commands.rs` | Simplification | P1 | `[x]` |
 | `SIM-02` | Implement standard Rust conversion traits (`Display`, `FromStr`) | `src/model.rs` | Idiomatic Rust | P2 | `[x]` |
-| `SIM-03` | Clean up path normalization and tilde expansion | `src/config.rs` | Simplification | P2 | `[ ]` |
+| `SIM-03` | Clean up path normalization and tilde expansion | `src/config.rs` | Simplification | P2 | `[x]` |
 | `PERF-01` | Replace string-rendering diff with structural equality | `src/reconcile.rs` | Performance | P1 | `[ ]` |
 | `PERF-02` | Add fast-path prefix filters to avoid unnecessary Regex matching | `src/markdown.rs` | Performance | P1 | `[ ]` |
 | `PERF-03` | Eliminate temporary allocations in `render_document` | `src/markdown.rs` | Performance | P2 | `[ ]` |
@@ -151,7 +151,7 @@ This document tracks all identified code-quality improvements, simplifications, 
   - Keep backward-compatible helper methods as aliases or deprecate cleanly.
 - **Verification**: Code compiles and `cargo test` passes.
 
-#### [ ] Task `SIM-03`: Clean up path normalization in `config.rs`
+#### [x] Task `SIM-03`: Clean up path normalization in `config.rs`
 - **Location**: `src/config.rs:36-57`
 - **Issue**:
   - `normalize_data_dir` contains custom loop handling `Component::CurDir` and `Component::ParentDir`.

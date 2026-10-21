@@ -33,6 +33,8 @@ pub fn expand_tilde(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+/// Normalizes a path by expanding `~`, resolving against `cwd` if relative,
+/// canonicalizing if it exists on disk, or syntactically resolving `.` and `..` components.
 pub fn normalize_data_dir(path: &Path, cwd: &Path) -> Result<PathBuf, anyhow::Error> {
     let expanded = expand_tilde(path);
     let candidate = if expanded.is_relative() {
@@ -255,5 +257,13 @@ mod tests {
         let resolved = resolve_paths(None, None, &config_file, &callsite, "testhost").unwrap();
         assert_eq!(resolved.data_dir, config_dir.join("packages_repo"));
         assert!(!resolved.data_dir.is_relative());
+    }
+
+    #[test]
+    fn normalize_data_dir_syntactically_collapses_relative_segments() {
+        let cwd = Path::new("/var/workspace");
+        let path = Path::new("sub/../foo/./bar");
+        let norm = normalize_data_dir(path, cwd).unwrap();
+        assert_eq!(norm, PathBuf::from("/var/workspace/foo/bar"));
     }
 }
