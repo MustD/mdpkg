@@ -8,7 +8,7 @@
 
 - **Declarative Markdown Checklists:** Manage official repository, AUR, and global `npm` packages in clean Markdown files (`packages.md` master catalog and `<hostname>.md` per-host checklists).
 - **Safe Multi-Host Reconciliation:** Sync catalog additions and reorganizations across multiple machines without clobbering host-specific enabled/disabled choices.
-- **Desired-State Enforcement:** Checking `- [x]` installs a package; unchecking `- [ ]` removes it. Disabling an entire category `### [ ]` disables all child items while preserving their checkboxes on disk for easy re-enabling.
+- **Desired-State Enforcement:** Checking `- [x]` installs a package; unchecking `- [ ]`, its parent category `### [ ]`, or its parent section `## [ ]` removes it while preserving child checkboxes on disk for easy re-enabling.
 - **Single-Password Elevation:** Runs `sudo -v` upfront and maintains credentials in the background alongside a temporary Polkit session rule so long unattended system updates and AUR builds never pause for repeated password prompts.
 - **Lifecycle Hooks:** Execute custom scripts (`preInstall`, `postInstall`, `preRemoval`, `postRemoval`) for custom setups like system services, hardware drivers, and shell integrations, with automatic fallbacks for filesystems or sync clients (e.g. Nextcloud, Syncthing, Google Drive) that strip executable bits.
 - **AI Agent Native:** Built-in `mdpkg ai-help` command and rich `--help` documentation providing structured instructions and non-interactive command flags for coding agents.
@@ -69,7 +69,7 @@ cargo install --path .
 
 > **Format legend**
 > - `- [x]` enabled on host · `- [ ]` disabled (uninstalled if present on host)
-> - `### [x] category` category toggle · `## [x] SECTION` section toggle (gates default sync)
+> - `### [x] category` category toggle · `## [x] SECTION` section toggle (unchecking `## [ ]` or `### [ ]` disables and removes all child packages)
 > - Repo package: no prefix or `m:` — `- [x] `git` — version control`
 > - AUR package: `a:` prefix — `- [x] a:`google-chrome` — Chrome browser` (legacy `Ⓐ` also accepted)
 > - Global npm package: `n:` prefix — `- [x] n:`typescript` — TypeScript compiler`

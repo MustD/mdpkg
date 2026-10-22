@@ -213,23 +213,25 @@ pub fn compute_sync_plan(
     for sec in &host_doc.sections {
         let in_scope = if let Some(req_secs) = requested_sections {
             if req_secs.is_empty() {
-                sec.checked
+                true
             } else {
                 req_secs.iter().any(|r| r.eq_ignore_ascii_case(&sec.name))
             }
         } else {
-            sec.checked
+            true
         };
 
         if !in_scope {
             continue;
         }
 
+        let sec_enabled = sec.checked;
+
         for cat in &sec.categories {
             let cat_enabled = cat.checked;
 
             for item in &cat.items {
-                let effective_enabled = cat_enabled && item.checked;
+                let effective_enabled = sec_enabled && cat_enabled && item.checked;
                 let is_inst = installed.is_installed(item.source, &item.name);
 
                 if effective_enabled {
@@ -336,6 +338,51 @@ mod tests {
         // Item checkbox inside disabled category remains [x] when rendered back
         let rendered = render_document(&host);
         assert!(rendered.contains("### [ ] disabled-cat\n- [x] `git` — vcs"));
+    }
+
+    #[test]
+    fn unchecked_section_queues_installed_children_for_removal_and_does_not_install_missing() {
+        let host_md = "\
+## [ ] PRINTING — Printing stack
+### [x] printing stack
+- [x] `manjaro-printer` — cups
+- [x] `system-config-printer` — gtk tool
+## [x] MAIN — Core
+### [x] cli
+- [x] `git` — vcs
+";
+        let (host, _) = parse_document(Path::new("myhost.md"), host_md);
+        let installed = InstalledPackages {
+            repo_and_aur: HashSet::from(["manjaro-printer".to_string(), "git".to_string()]),
+            npm: HashSet::new(),
+        };
+
+        // 1. Default sync (all sections evaluated)
+        let plan = compute_sync_plan(&host, None, &installed, false).unwrap();
+        assert!(
+            plan.to_install.is_empty(),
+            "unchecked section must not queue system-config-printer for install"
+        );
+        assert_eq!(
+            plan.to_remove
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["manjaro-printer"]
+        );
+
+        // 2. Named section sync (`mdpkg sync PRINTING`)
+        let named = vec!["PRINTING".to_string()];
+        let named_plan = compute_sync_plan(&host, Some(&named), &installed, false).unwrap();
+        assert!(named_plan.to_install.is_empty());
+        assert_eq!(
+            named_plan
+                .to_remove
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["manjaro-printer"]
+        );
     }
 
     #[test]

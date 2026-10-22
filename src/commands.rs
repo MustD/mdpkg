@@ -6,8 +6,8 @@ use crate::cli::{
 use crate::config::{resolve_paths, save_data_dir, ResolvedPaths};
 use crate::hooks::{discover_hooks, init_hooks_dir, run_hook, validate_hooks};
 use crate::markdown::{
-    insert_package_item, parse_document, remove_package_item, render_document, set_package_checked,
-    validate_document,
+    insert_package_item, parse_document, remove_package_item, render_catalog_document,
+    render_document, set_package_checked, validate_document,
 };
 use crate::model::{Document, HookStage, PackageItem, PackageSource};
 use crate::reconcile::{compute_sync_plan, reconcile_catalog_to_host, InstalledPackages};
@@ -537,7 +537,10 @@ fn handle_add(
 
     if !already_in_catalog {
         insert_package_item(&mut ctx.catalog_doc, &section, &category, item);
-        fs::write(&paths.catalog_path, render_document(&ctx.catalog_doc))?;
+        fs::write(
+            &paths.catalog_path,
+            render_catalog_document(&ctx.catalog_doc),
+        )?;
     } else {
         println!(
             "Package '{}' already in master catalog. Updating host state.",
@@ -664,7 +667,7 @@ fn handle_remove(
         let catalog_content = fs::read_to_string(&paths.catalog_path)?;
         let (mut catalog_doc, _) = parse_document(&paths.catalog_path, &catalog_content);
         if remove_package_item(&mut catalog_doc, &args.package) {
-            fs::write(&paths.catalog_path, render_document(&catalog_doc))?;
+            fs::write(&paths.catalog_path, render_catalog_document(&catalog_doc))?;
             println!(
                 "Purged '{}' from catalog {}.",
                 args.package,

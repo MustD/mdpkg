@@ -141,10 +141,10 @@ pub struct CompletionsArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct SyncArgs {
-    #[arg(help = "Specific sections to sync (e.g. MAIN CLI). Defaults to all checked sections.")]
+    #[arg(help = "Specific sections to sync (e.g. MAIN CLI). Defaults to all sections.")]
     pub sections: Vec<String>,
 
-    #[arg(long, help = "Sync all checked sections (default behavior)")]
+    #[arg(long, help = "Sync all sections (default behavior)")]
     pub all: bool,
 
     #[arg(
@@ -320,11 +320,10 @@ pub fn render_ai_help(paths: &ResolvedPaths) -> String {
 - Config file:    `{}`
 
 ## Core Concepts & Rules
-1. `packages.md` defines known packages, sections (`##`), categories (`###`), and descriptions.
-2. `<hostname>.md` tracks host-specific enablement:
-   - `- [x]` -> installed on this host
-   - `- [ ]` -> uninstalled/removed from this host
-   - `### [ ]` -> category disabled (all child packages queued for removal while preserving child checkboxes)
+1. `packages.md` defines known packages, sections (`##`), categories (`###`), and descriptions (no checkboxes needed in `packages.md`).
+2. `<hostname>.md` tracks host-specific enablement with a strict 3-level hierarchy (`##` -> `###` -> `- [ ]`):
+   - A package is enabled and installed on this host if and only if its section (`## [x]`), category (`### [x]`), and item (`- [x]`) are all checked.
+   - If any of `## [ ]`, `### [ ]`, or `- [ ]` is unchecked, the package is queued for removal if currently installed (while preserving child checkboxes on disk).
 3. Source prefixes before the package backtick:
    - No prefix or `m:` -> Manjaro repository package
    - `a:` (or legacy `Ⓐ`) -> AUR package (normalized to `a:`)

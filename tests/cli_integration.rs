@@ -39,10 +39,14 @@ fn end_to_end_add_check_sync_disable_and_ai_help() {
     .unwrap();
     execute_command(cli, &mut backend).unwrap();
     assert_eq!(backend.installed_aur, vec!["google-chrome".to_string()]);
-    assert!(fs::read_to_string(&catalog)
+    let catalog_after_add = fs::read_to_string(&catalog).unwrap();
+    assert!(catalog_after_add.contains("- a:`google-chrome` — Browser"));
+    assert!(!catalog_after_add.contains("[x]"));
+    assert!(!catalog_after_add.contains("[ ]"));
+    assert!(dir.path().join("laptop.md").exists());
+    assert!(fs::read_to_string(dir.path().join("laptop.md"))
         .unwrap()
         .contains("- [x] a:`google-chrome` — Browser"));
-    assert!(dir.path().join("laptop.md").exists());
 
     // 2. Check command is read-only and succeeds on valid files
     let cli = Cli::try_parse_from([
@@ -347,4 +351,80 @@ fn test_completions_subcommand_parses_and_generates_scripts_for_all_shells() {
 fn test_hooks_run_stage_validates_possible_values_for_completions() {
     assert!(Cli::try_parse_from(["mdpkg", "hooks", "run", "git", "postInstall"]).is_ok());
     assert!(Cli::try_parse_from(["mdpkg", "hooks", "run", "git", "invalidStage"]).is_err());
+}
+
+#[test]
+fn test_section_checkbox_hierarchy_triggers_removal_and_install() {
+    let dir = tempdir().unwrap();
+    let catalog = dir.path().join("packages.md");
+    let host_file = dir.path().join("laptop.md");
+
+    fs::write(
+        &catalog,
+        "# Packages\n\n## MAIN — Core\n\n### cli\n- `git` — vcs\n\n## PRINTING — Printers\n\n### printing stack\n- `manjaro-printer` — cups\n- `system-config-printer` — gtk\n",
+    )
+    .unwrap();
+
+    // Unchecked ## [ ] PRINTING section in host file while child categories and items are [x]
+    fs::write(
+        &host_file,
+        "# Packages\n\n## [x] MAIN — Core\n\n### [x] cli\n- [x] `git` — vcs\n\n## [ ] PRINTING — Printers\n\n### [x] printing stack\n- [x] `manjaro-printer` — cups\n- [x] `system-config-printer` — gtk\n",
+    )
+    .unwrap();
+
+    let mut backend = MockSystemBackend::default();
+    backend.installed.repo_and_aur.insert("git".to_string());
+    backend
+        .installed
+        .repo_and_aur
+        .insert("manjaro-printer".to_string());
+    backend
+        .installed
+        .repo_and_aur
+        .insert("system-config-printer".to_string());
+
+    // 1. Sync with ## [ ] PRINTING unchecked -> removes installed printing packages
+    let cli = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "laptop",
+        "sync",
+        "--no-confirm",
+    ])
+    .unwrap();
+    execute_command(cli, &mut backend).unwrap();
+    assert_eq!(
+        backend.removed_repo_or_aur,
+        vec![
+            "manjaro-printer".to_string(),
+            "system-config-printer".to_string()
+        ]
+    );
+
+    // 2. Now check ## [x] PRINTING in host file -> installs printing packages
+    let updated_host = fs::read_to_string(&host_file)
+        .unwrap()
+        .replace("## [ ] PRINTING", "## [x] PRINTING");
+    fs::write(&host_file, updated_host).unwrap();
+
+    let cli = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "laptop",
+        "sync",
+        "--no-confirm",
+    ])
+    .unwrap();
+    execute_command(cli, &mut backend).unwrap();
+    assert_eq!(
+        backend.installed_repo,
+        vec![
+            "manjaro-printer".to_string(),
+            "system-config-printer".to_string()
+        ]
+    );
 }
