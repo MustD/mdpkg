@@ -139,11 +139,13 @@ jobs:
             exit 1
           fi
 
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          mkdir -p /tmp/aur-ssh
+          chmod 700 /tmp/aur-ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /tmp/aur-ssh/id_ed25519
+          chmod 600 /tmp/aur-ssh/id_ed25519
+          ssh-keyscan -H aur.archlinux.org > /tmp/aur-ssh/known_hosts 2>/dev/null || true
+
+          export GIT_SSH_COMMAND="ssh -i /tmp/aur-ssh/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=/tmp/aur-ssh/known_hosts -o StrictHostKeyChecking=accept-new"
 
           git clone ssh://aur@aur.archlinux.org/mdpkg.git /tmp/aur-mdpkg
           cp /tmp/PKGBUILD.updated /tmp/aur-mdpkg/PKGBUILD
