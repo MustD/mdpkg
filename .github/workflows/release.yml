@@ -1,0 +1,127 @@
+name: Release & Publish to AUR
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build Package, GitHub Release & AUR Push
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+      AUR_USERNAME: ${{ vars.AUR_USERNAME || 'mustd' }}
+      AUR_EMAIL: ${{ vars.AUR_EMAIL || 'ilya.obukhov.bs@gmail.com' }}
+
+    steps:
+      - name: Install Arch Linux build & release tools
+        run: |
+          pacman -Syu --noconfirm \
+            git \
+            openssh \
+            pacman-contrib \
+            rust \
+            github-cli
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag and Cargo.toml version
+        id: meta
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          TAG="${GITHUB_REF_NAME}"
+          PKGVER="${TAG#v}"
+          CARGO_VER=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          if [ "$PKGVER" != "$CARGO_VER" ]; then
+            echo "::error::Tag version ($PKGVER) does not match Cargo.toml version ($CARGO_VER). Bump Cargo.toml before tagging."
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+
+      - name: Update PKGBUILD, regenerate .SRCINFO, and build Arch package
+        run: |
+          PKGVER="${{ steps.meta.outputs.pkgver }}"
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+          su builder -c "
+            set -euo pipefail
+            cd '$GITHUB_WORKSPACE/packaging/aur'
+            sed -i 's/^pkgver=.*/pkgver=${PKGVER}/' PKGBUILD
+            sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
+            updpkgsums
+            makepkg --printsrcinfo > .SRCINFO
+            makepkg -dfc --noconfirm
+          "
+
+          cp packaging/aur/PKGBUILD /tmp/PKGBUILD.updated
+          cp packaging/aur/.SRCINFO /tmp/.SRCINFO.updated
+
+      - name: Upload built package to GitHub Release
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          PKGVER="${{ steps.meta.outputs.pkgver }}"
+          gh release upload "$TAG" packaging/aur/mdpkg-"${PKGVER}"-1-*.pkg.tar.zst --clobber
+
+      - name: Commit updated PKGBUILD and .SRCINFO to main
+        run: |
+          PKGVER="${{ steps.meta.outputs.pkgver }}"
+          git config user.name "$AUR_USERNAME"
+          git config user.email "$AUR_EMAIL"
+          git fetch origin main
+          git checkout -B main origin/main
+          cp /tmp/PKGBUILD.updated packaging/aur/PKGBUILD
+          cp /tmp/.SRCINFO.updated packaging/aur/.SRCINFO
+          if ! git diff --quiet packaging/aur/PKGBUILD packaging/aur/.SRCINFO; then
+            git add packaging/aur/PKGBUILD packaging/aur/.SRCINFO
+            git commit -m "chore(aur): update PKGBUILD and .SRCINFO checksums for v${PKGVER} [skip ci]"
+            git push origin main
+          fi
+
+      - name: Publish PKGBUILD and .SRCINFO to AUR
+        run: |
+          PKGVER="${{ steps.meta.outputs.pkgver }}"
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::error::AUR_SSH_PRIVATE_KEY secret is not configured in GitHub repository secrets."
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+
+          git clone ssh://aur@aur.archlinux.org/mdpkg.git /tmp/aur-mdpkg
+          cp /tmp/PKGBUILD.updated /tmp/aur-mdpkg/PKGBUILD
+          cp /tmp/.SRCINFO.updated /tmp/aur-mdpkg/.SRCINFO
+
+          git -C /tmp/aur-mdpkg config user.name "$AUR_USERNAME"
+          git -C /tmp/aur-mdpkg config user.email "$AUR_EMAIL"
+
+          if ! git -C /tmp/aur-mdpkg diff --quiet; then
+            git -C /tmp/aur-mdpkg add PKGBUILD .SRCINFO
+            git -C /tmp/aur-mdpkg commit -m "Update to v${PKGVER}-1"
+            git -C /tmp/aur-mdpkg push origin master
+          else
+            echo "AUR repository is already up to date for v${PKGVER}-1."
+          fi

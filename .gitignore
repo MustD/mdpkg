@@ -1,3 +1,5 @@
 /target
 .superpowers/
 .agents/
+.sercure.env
+.secure.env
