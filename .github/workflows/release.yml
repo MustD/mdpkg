@@ -1,6 +1,12 @@
 name: Release & Publish to AUR
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.3.0 or v0.3.0)'
+        required: true
+        type: string
   push:
     tags:
       - 'v*.*.*'
@@ -35,17 +41,45 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate tag and Cargo.toml version
+      - name: Prepare release version, bump Cargo.toml, and tag
         id: meta
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          TAG="${GITHUB_REF_NAME}"
-          PKGVER="${TAG#v}"
-          CARGO_VER=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
-          if [ "$PKGVER" != "$CARGO_VER" ]; then
-            echo "::error::Tag version ($PKGVER) does not match Cargo.toml version ($CARGO_VER). Bump Cargo.toml before tagging."
+          git config user.name "$AUR_USERNAME"
+          git config user.email "$AUR_EMAIL"
+
+          RAW_VER="${{ inputs.version }}"
+          if [ -z "$RAW_VER" ]; then
+            RAW_VER="${GITHUB_REF_NAME}"
+          fi
+          PKGVER="${RAW_VER#v}"
+          TAG="v${PKGVER}"
+
+          if ! [[ "$PKGVER" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version '$RAW_VER'. Expected format like 0.3.0 or v0.3.0."
             exit 1
           fi
+
+          git fetch origin main
+          git checkout -B main origin/main
+
+          CARGO_VER=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          if [ "$PKGVER" != "$CARGO_VER" ]; then
+            sed -i "0,/^version = \".*\"/s//version = \"${PKGVER}\"/" Cargo.toml
+            sed -i "/^name = \"mdpkg\"\$/{n;s/^version = \".*\"/version = \"${PKGVER}\"/;}" Cargo.lock
+            git add Cargo.toml Cargo.lock
+            git commit -m "chore(release): bump version to ${TAG} [skip ci]"
+            git push origin main
+          fi
+
+          git fetch --tags --force origin
+          HEAD_SHA=$(git rev-parse HEAD)
+          REMOTE_TAG_SHA=$(git rev-parse --verify --quiet "refs/tags/${TAG}^{commit}" || true)
+          if [ "$REMOTE_TAG_SHA" != "$HEAD_SHA" ]; then
+            git tag -f "$TAG" "$HEAD_SHA"
+            git push origin -f "refs/tags/${TAG}"
+          fi
+
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
 
