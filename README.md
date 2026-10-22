@@ -196,20 +196,21 @@ To build and publish a new release to the AUR:
 
 ```bash
 # 1. Tag and create the GitHub release so the source tarball URL is available
-gh release create v0.1.0 --title "v0.1.0" --generate-notes
+gh release create v0.2.0 --title "v0.2.0" --generate-notes
 
 # 2. Update sha256sums in packaging/aur/PKGBUILD and regenerate .SRCINFO
 cd packaging/aur
 updpkgsums
 makepkg --printsrcinfo > .SRCINFO
 
-# 3. Verify package build and tests
-makepkg -sf
+# 3. Build the package, run tests, and upload the artifact to the GitHub release
+makepkg -sfc
+gh release upload v0.2.0 mdpkg-0.2.0-1-x86_64.pkg.tar.zst
 
 # 4. Push PKGBUILD and .SRCINFO to the AUR repository
 git clone ssh://aur@aur.archlinux.org/mdpkg.git /tmp/aur-mdpkg
 cp PKGBUILD .SRCINFO /tmp/aur-mdpkg/
-git -C /tmp/aur-mdpkg commit -am "Update to v0.1.0-1"
+git -C /tmp/aur-mdpkg commit -am "Update to v0.2.0-1"
 git -C /tmp/aur-mdpkg push origin master
 ```
 
