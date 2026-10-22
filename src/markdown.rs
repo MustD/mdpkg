@@ -289,6 +289,14 @@ pub fn validate_document(path: &Path, content: &str) -> Vec<ValidationIssue> {
 }
 
 pub fn render_document(doc: &Document) -> String {
+    render_document_inner(doc, true)
+}
+
+pub fn render_catalog_document(doc: &Document) -> String {
+    render_document_inner(doc, false)
+}
+
+fn render_document_inner(doc: &Document, include_checkboxes: bool) -> String {
     use std::fmt::Write;
 
     let hint = doc.preamble.iter().map(|l| l.len() + 1).sum::<usize>()
@@ -330,18 +338,38 @@ pub fn render_document(doc: &Document) -> String {
             }
         }
 
-        let chk = if section.checked { "[x]" } else { "[ ]" };
-        if section.description.is_empty() {
-            let _ = writeln!(out, "## {} {}", chk, section.name);
+        let sec_chk_prefix = if include_checkboxes {
+            if section.checked {
+                "[x] "
+            } else {
+                "[ ] "
+            }
         } else {
-            let _ = writeln!(out, "## {} {} — {}", chk, section.name, section.description);
+            ""
+        };
+        if section.description.is_empty() {
+            let _ = writeln!(out, "## {}{}", sec_chk_prefix, section.name);
+        } else {
+            let _ = writeln!(
+                out,
+                "## {}{} — {}",
+                sec_chk_prefix, section.name, section.description
+            );
         }
 
         for category in &section.categories {
             out.push('\n');
             if let Some(cat_name) = &category.name {
-                let cat_chk = if category.checked { "[x]" } else { "[ ]" };
-                let _ = writeln!(out, "### {} {}", cat_chk, cat_name);
+                let cat_chk_prefix = if include_checkboxes {
+                    if category.checked {
+                        "[x] "
+                    } else {
+                        "[ ] "
+                    }
+                } else {
+                    ""
+                };
+                let _ = writeln!(out, "### {}{}", cat_chk_prefix, cat_name);
             }
 
             for note in &category.notes {
@@ -350,7 +378,15 @@ pub fn render_document(doc: &Document) -> String {
             }
 
             for item in &category.items {
-                let item_chk = if item.checked { "[x]" } else { "[ ]" };
+                let item_chk_prefix = if include_checkboxes {
+                    if item.checked {
+                        "[x] "
+                    } else {
+                        "[ ] "
+                    }
+                } else {
+                    ""
+                };
                 let prefix = match item.source {
                     PackageSource::Repo => {
                         if item.explicit_m_prefix {
@@ -364,12 +400,12 @@ pub fn render_document(doc: &Document) -> String {
                 };
 
                 if item.description.is_empty() {
-                    let _ = writeln!(out, "- {} {}`{}`", item_chk, prefix, item.name);
+                    let _ = writeln!(out, "- {}{}`{}`", item_chk_prefix, prefix, item.name);
                 } else {
                     let _ = writeln!(
                         out,
-                        "- {} {}`{}` — {}",
-                        item_chk, prefix, item.name, item.description
+                        "- {}{}`{}` — {}",
+                        item_chk_prefix, prefix, item.name, item.description
                     );
                 }
             }
@@ -566,5 +602,32 @@ mod tests {
         assert_eq!(doc.sections[0].categories[0].items.len(), 1);
         assert_eq!(doc.sections[0].categories[0].items[0].name, "yay");
         assert!(!remove_package_item(&mut doc, "nonexistent"));
+    }
+
+    #[test]
+    fn test_render_catalog_document_omits_checkboxes() {
+        let input = "\
+# Manjaro packages
+
+> **Format legend**
+
+## [x] MAIN — Basic packages
+
+### [ ] core CLI
+- [x] `git` — version control
+- [ ] a:`google-chrome` — Chrome browser
+- [x] n:`typescript`
+";
+        let (doc, issues) = parse_document(Path::new("packages.md"), input);
+        assert!(issues.is_empty());
+
+        let catalog_rendered = render_catalog_document(&doc);
+        assert!(!catalog_rendered.contains("[x]"));
+        assert!(!catalog_rendered.contains("[ ]"));
+        assert!(catalog_rendered.contains("## MAIN — Basic packages\n"));
+        assert!(catalog_rendered.contains("### core CLI\n"));
+        assert!(catalog_rendered.contains("- `git` — version control\n"));
+        assert!(catalog_rendered.contains("- a:`google-chrome` — Chrome browser\n"));
+        assert!(catalog_rendered.contains("- n:`typescript`\n"));
     }
 }
