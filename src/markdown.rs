@@ -396,7 +396,9 @@ fn render_document_inner(doc: &Document, include_checkboxes: bool) -> String {
                         }
                     }
                     PackageSource::Aur => "a:",
+                    PackageSource::Apt => "d:",
                     PackageSource::Npm => "n:",
+                    PackageSource::Custom => "c:",
                 };
 
                 if item.description.is_empty() {
@@ -629,5 +631,42 @@ mod tests {
         assert!(catalog_rendered.contains("- `git` — version control\n"));
         assert!(catalog_rendered.contains("- a:`google-chrome` — Chrome browser\n"));
         assert!(catalog_rendered.contains("- n:`typescript`\n"));
+    }
+
+    #[test]
+    fn parses_and_renders_apt_and_custom_sources() {
+        let input = "\
+## [x] MAIN — Core
+### [x] cli
+- [x] d:`jq` — JSON processor
+- [x] apt:`tree` — dir tree
+- [x] c:`rustup` — Rust toolchain
+- [ ] custom:`bun` — Bun runtime
+";
+        let (doc, issues) = parse_document(Path::new("packages.md"), input);
+        assert!(issues.is_empty(), "unexpected issues: {:?}", issues);
+        let items = &doc.sections[0].categories[0].items;
+        assert_eq!(
+            (items[0].name.as_str(), items[0].source),
+            ("jq", PackageSource::Apt)
+        );
+        assert_eq!(
+            (items[1].name.as_str(), items[1].source),
+            ("tree", PackageSource::Apt)
+        );
+        assert_eq!(
+            (items[2].name.as_str(), items[2].source),
+            ("rustup", PackageSource::Custom)
+        );
+        assert_eq!(
+            (items[3].name.as_str(), items[3].source),
+            ("bun", PackageSource::Custom)
+        );
+
+        let rendered = render_document(&doc);
+        assert!(rendered.contains("- [x] d:`jq` — JSON processor\n"));
+        assert!(rendered.contains("- [x] d:`tree` — dir tree\n"));
+        assert!(rendered.contains("- [x] c:`rustup` — Rust toolchain\n"));
+        assert!(rendered.contains("- [ ] c:`bun` — Bun runtime\n"));
     }
 }

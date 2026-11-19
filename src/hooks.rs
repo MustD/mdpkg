@@ -215,11 +215,7 @@ pub fn run_hook(
 ) -> Result<(), anyhow::Error> {
     let (prog, args) = resolve_hook_invocation(script).map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    let source_str = match pkg.source {
-        crate::model::PackageSource::Repo => "repo",
-        crate::model::PackageSource::Aur => "aur",
-        crate::model::PackageSource::Npm => "npm",
-    };
+    let source_str = pkg.source.short_label();
 
     let status = Command::new(&prog)
         .args(&args)

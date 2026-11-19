@@ -12,6 +12,7 @@ impl InstalledPackages {
         match source {
             PackageSource::Repo | PackageSource::Aur => self.repo_and_aur.contains(name),
             PackageSource::Npm => self.npm.contains(name),
+            PackageSource::Apt | PackageSource::Custom => false,
         }
     }
 }

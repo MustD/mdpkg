@@ -518,6 +518,7 @@ fn handle_add(
             PackageSource::Repo => backend.install_repo(&pkg_list, true, false)?,
             PackageSource::Aur => backend.install_aur(&pkg_list, true, false)?,
             PackageSource::Npm => backend.install_npm(&pkg_list, false)?,
+            PackageSource::Apt | PackageSource::Custom => {}
         }
 
         if let Some(h) = hooks
@@ -707,11 +708,7 @@ fn handle_list(
                     "(not installed)"
                 };
                 let chk = if item.checked { "[x]" } else { "[ ]" };
-                let src_prefix = match item.source {
-                    PackageSource::Repo => "repo",
-                    PackageSource::Aur => "aur",
-                    PackageSource::Npm => "npm",
-                };
+                let src_prefix = item.source.short_label();
 
                 let attached_hooks: Vec<String> = hooks
                     .iter()

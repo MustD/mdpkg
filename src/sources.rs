@@ -407,6 +407,7 @@ pub fn execute_sync_plan(
             PackageSource::Repo => repo_pkgs.push(item.name.clone()),
             PackageSource::Aur => aur_pkgs.push(item.name.clone()),
             PackageSource::Npm => npm_pkgs.push(item.name.clone()),
+            PackageSource::Apt | PackageSource::Custom => {}
         }
     }
 
@@ -461,6 +462,7 @@ pub fn execute_sync_plan(
         match item.source {
             PackageSource::Repo | PackageSource::Aur => remove_repo_or_aur.push(item.name.clone()),
             PackageSource::Npm => remove_npm.push(item.name.clone()),
+            PackageSource::Apt | PackageSource::Custom => {}
         }
     }
 
