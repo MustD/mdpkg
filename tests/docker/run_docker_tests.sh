@@ -93,9 +93,23 @@ EOF
         mdpkg --dir /tmp/mdpkg-test --host ubuntu-test check --strict
 
         echo "[Ubuntu] 5. Run mdpkg update --no-confirm --ignore tree --skip-npm"
+        REAL_APT="$(command -v apt)"
+        cat > /usr/local/bin/apt <<EOF
+#!/usr/bin/env bash
+if [[ "\$1" == "upgrade" ]]; then
+    apt-mark showhold > /tmp/mdpkg-test/apt_held_during_upgrade.txt
+fi
+exec "$REAL_APT" "\$@"
+EOF
+        chmod +x /usr/local/bin/apt
+        export PATH="/usr/local/bin:$PATH"
+
         mdpkg --dir /tmp/mdpkg-test --host ubuntu-test update --no-confirm --ignore tree --skip-npm
+        grep -qx "tree" /tmp/mdpkg-test/apt_held_during_upgrade.txt
+        ! apt-mark showhold | grep -qx "tree"
         test -f /tmp/mdpkg-test/custom_updated.txt
         /usr/local/bin/my-curl-tool | grep -q "v2"
+        rm -f /usr/local/bin/apt
 
         echo "[Ubuntu] 6. Disable tree and my-curl-tool and verify removal"
         mdpkg --dir /tmp/mdpkg-test --host ubuntu-test disable tree --no-confirm
@@ -201,9 +215,9 @@ EOF
         REAL_PACMAN="$(command -v pacman)"
         cat > /usr/local/bin/pacman <<EOF
 #!/usr/bin/env bash
-if [[ "\$*" == *"-Syu"* ]]; then
+if [[ "\$1" == "-Syu" ]]; then
     echo "\$*" > /tmp/mdpkg-test/pacman_syu_args.txt
-    exit 0
+    exec "$REAL_PACMAN" -Sy "\${@:2}"
 fi
 exec "$REAL_PACMAN" "\$@"
 EOF
