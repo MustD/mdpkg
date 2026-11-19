@@ -4,14 +4,18 @@ use crate::cli::{
     PackageTargetArgs, RemoveArgs, SyncArgs, UpdateArgs,
 };
 use crate::config::{resolve_paths, save_data_dir, ResolvedPaths};
-use crate::hooks::{discover_hooks, init_hooks_dir, run_hook, validate_hooks};
+use crate::hooks::{
+    discover_hooks, init_hooks_dir, run_hook, scaffold_custom_package_scripts, validate_hooks,
+};
 use crate::markdown::{
     insert_package_item, parse_document, remove_package_item, render_catalog_document,
     render_document, set_package_checked, validate_document,
 };
 use crate::model::{Document, HookStage, PackageItem, PackageSource};
 use crate::reconcile::{compute_sync_plan, reconcile_catalog_to_host, InstalledPackages};
-use crate::sources::{execute_sync_plan, SystemBackend};
+use crate::sources::{
+    execute_sync_plan, load_custom_installed, update_custom_packages, SystemBackend,
+};
 use clap::CommandFactory;
 use clap_complete::{generate, Shell};
 use dialoguer::{Input, Select};
@@ -87,7 +91,7 @@ pub fn execute_command(cli: Cli, backend: &mut dyn SystemBackend) -> Result<(), 
         Commands::Hooks(cmd) => handle_hooks(cmd, &paths),
         Commands::Check(args) => handle_check(args, &paths, backend),
         Commands::Sync(args) => handle_sync(args, &paths, backend),
-        Commands::Update(args) => handle_update(args, backend),
+        Commands::Update(args) => handle_update(args, &paths, backend),
         Commands::Add(args) => handle_add(args, &paths, backend),
         Commands::Enable(args) => handle_enable(args, &paths, backend),
         Commands::Disable(args) => handle_disable(args, &paths, backend),
@@ -159,8 +163,12 @@ fn handle_hooks(cmd: HooksCommand, paths: &ResolvedPaths) -> Result<(), anyhow::
             Ok(())
         }
         HooksSubcommand::Run { package, stage } => {
-            let hook_stage = HookStage::from_stage_str(&stage)
-                .ok_or_else(|| anyhow::anyhow!("Invalid hook stage '{}'. Use preInstall, postInstall, preRemoval, or postRemoval", stage))?;
+            let hook_stage = HookStage::from_stage_str(&stage).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid hook stage '{}'. Use preInstall, postInstall, preRemoval, postRemoval, install, remove, or update",
+                    stage
+                )
+            })?;
             let hooks = discover_hooks(&paths.hooks_dir)?;
             let hook = hooks
                 .iter()
@@ -261,7 +269,8 @@ fn handle_check(
     }
 
     // Check drift against current host
-    let installed = backend.query_installed()?;
+    let mut installed = backend.query_installed()?;
+    populate_custom_installed(&mut installed, &catalog_doc, paths);
     let host_doc = if paths.host_path.exists() {
         let content = fs::read_to_string(&paths.host_path)?;
         Some(parse_document(&paths.host_path, &content).0)
@@ -320,6 +329,36 @@ fn handle_check(
     Ok(())
 }
 
+fn populate_custom_installed(
+    installed: &mut InstalledPackages,
+    catalog_doc: &Document,
+    paths: &ResolvedPaths,
+) {
+    let tracked = load_custom_installed(&paths.data_dir, &paths.host_name);
+    installed.custom.extend(tracked);
+
+    if !paths.host_path.exists() {
+        for sec in &catalog_doc.sections {
+            for cat in &sec.categories {
+                for item in &cat.items {
+                    if item.source == PackageSource::Custom
+                        && !installed.custom.contains(&item.name)
+                    {
+                        if let Ok(output) = std::process::Command::new("sh")
+                            .args(["-c", &format!("command -v {}", item.name)])
+                            .output()
+                        {
+                            if output.status.success() {
+                                installed.custom.insert(item.name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct HostContext {
     catalog_doc: Document,
     installed: InstalledPackages,
@@ -340,7 +379,8 @@ fn load_host_context(
         anyhow::bail!("Catalog file has syntax errors; run `mdpkg check`");
     }
 
-    let installed = backend.query_installed()?;
+    let mut installed = backend.query_installed()?;
+    populate_custom_installed(&mut installed, &catalog_doc, paths);
 
     let host_doc = if paths.host_path.exists() {
         let content = fs::read_to_string(&paths.host_path)?;
@@ -413,9 +453,42 @@ fn handle_sync(
     Ok(())
 }
 
-fn handle_update(args: UpdateArgs, backend: &mut dyn SystemBackend) -> Result<(), anyhow::Error> {
+fn handle_update(
+    args: UpdateArgs,
+    paths: &ResolvedPaths,
+    backend: &mut dyn SystemBackend,
+) -> Result<(), anyhow::Error> {
     backend.ensure_elevated()?;
-    backend.run_system_update(args.no_confirm, args.skip_npm, args.skip_orphans, &[])
+    let map_update_err = |e: anyhow::Error| {
+        anyhow::anyhow!(
+            "{}\nTip: If a specific package failed to update, try running:\n  mdpkg update --ignore <package_name>",
+            e
+        )
+    };
+
+    backend
+        .run_system_update(
+            args.no_confirm,
+            args.skip_npm,
+            args.skip_orphans,
+            &args.ignore,
+        )
+        .map_err(map_update_err)?;
+
+    if paths.catalog_path.exists() {
+        let ctx = load_host_context(paths, backend, false)?;
+        update_custom_packages(
+            &ctx.host_doc,
+            &ctx.installed,
+            &paths.hooks_dir,
+            &paths.host_name,
+            &paths.data_dir,
+            &args.ignore,
+        )
+        .map_err(map_update_err)?;
+    }
+
+    Ok(())
 }
 
 fn handle_add(
@@ -430,13 +503,17 @@ fn handle_add(
         match src {
             CliPackageSource::Repo => PackageSource::Repo,
             CliPackageSource::Aur => PackageSource::Aur,
+            CliPackageSource::Apt => PackageSource::Apt,
             CliPackageSource::Npm => PackageSource::Npm,
+            CliPackageSource::Custom => PackageSource::Custom,
         }
     } else if atty_check() {
         let selections = &[
-            "1. Manjaro Repository (default)",
+            "1. Manjaro Repository (m:)",
             "2. AUR (a:)",
-            "3. Global npm (n:)",
+            "3. APT Ubuntu/Debian (d:)",
+            "4. Global npm (n:)",
+            "5. Custom script (c:)",
         ];
         let idx = Select::new()
             .with_prompt("Select package source")
@@ -446,15 +523,38 @@ fn handle_add(
         match idx {
             0 => PackageSource::Repo,
             1 => PackageSource::Aur,
-            _ => PackageSource::Npm,
+            2 => PackageSource::Apt,
+            3 => PackageSource::Npm,
+            _ => PackageSource::Custom,
         }
     } else {
         PackageSource::Repo
     };
 
     // Resolve section
-    let section = if let Some(sec) = args.section {
-        sec
+    let section = if atty_check() {
+        let mut sec_choices: Vec<String> = ctx
+            .catalog_doc
+            .sections
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
+        let create_new_label = "+ Create new section...".to_string();
+        sec_choices.push(create_new_label);
+
+        let idx = Select::new()
+            .with_prompt("Select target section")
+            .items(&sec_choices)
+            .default(0)
+            .interact()?;
+
+        if idx + 1 == sec_choices.len() {
+            Input::<String>::new()
+                .with_prompt("New section name")
+                .interact_text()?
+        } else {
+            sec_choices[idx].clone()
+        }
     } else if let Some(first_sec) = ctx.catalog_doc.sections.first() {
         first_sec.name.clone()
     } else {
@@ -462,8 +562,35 @@ fn handle_add(
     };
 
     // Resolve category
-    let category = if let Some(cat) = args.category {
-        cat
+    let category = if atty_check() {
+        let mut cat_choices: Vec<String> = ctx
+            .catalog_doc
+            .sections
+            .iter()
+            .find(|s| s.name.eq_ignore_ascii_case(&section))
+            .map(|s| {
+                s.categories
+                    .iter()
+                    .filter_map(|c| c.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let create_new_label = "+ Create new category...".to_string();
+        cat_choices.push(create_new_label);
+
+        let idx = Select::new()
+            .with_prompt("Select target category")
+            .items(&cat_choices)
+            .default(0)
+            .interact()?;
+
+        if idx + 1 == cat_choices.len() {
+            Input::<String>::new()
+                .with_prompt("New category name")
+                .interact_text()?
+        } else {
+            cat_choices[idx].clone()
+        }
     } else if let Some(sec) = ctx
         .catalog_doc
         .sections
@@ -499,8 +626,16 @@ fn handle_add(
         line_no: 0,
     };
 
-    // Install immediately if not --no-install
-    if !args.no_install {
+    if source == PackageSource::Custom {
+        let (inst_path, rem_path) =
+            scaffold_custom_package_scripts(&paths.hooks_dir, &args.package)?;
+        println!(
+            "Scaffolded custom package scripts for '{}':\n  - {}\n  - {}\nFill in these scripts and run `mdpkg sync` to install.",
+            args.package,
+            inst_path.display(),
+            rem_path.display()
+        );
+    } else if !args.no_install {
         backend.ensure_elevated()?;
         let hooks = discover_hooks(&paths.hooks_dir).unwrap_or_default();
         if let Some(h) = hooks
@@ -514,8 +649,9 @@ fn handle_add(
         match item.source {
             PackageSource::Repo => backend.install_repo(&pkg_list, true, false)?,
             PackageSource::Aur => backend.install_aur(&pkg_list, true, false)?,
+            PackageSource::Apt => backend.install_apt(&pkg_list, true, false)?,
             PackageSource::Npm => backend.install_npm(&pkg_list, false)?,
-            PackageSource::Apt | PackageSource::Custom => {}
+            PackageSource::Custom => unreachable!(),
         }
 
         if let Some(h) = hooks
@@ -731,7 +867,10 @@ fn handle_list(
 }
 
 fn atty_check() -> bool {
-    if cfg!(test) || env::var("MDPKG_NON_INTERACTIVE").is_ok() {
+    if cfg!(test)
+        || env::var("MDPKG_NON_INTERACTIVE").is_ok()
+        || env::var_os("CARGO_MANIFEST_DIR").is_some()
+    {
         return false;
     }
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
