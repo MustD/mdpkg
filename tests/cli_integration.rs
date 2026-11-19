@@ -480,3 +480,123 @@ fn test_updates_alias_and_ignore_flag_and_failure_hint() {
     assert!(err.to_string().contains("--ignore"), "Expected --ignore hint, got: {}", err);
 }
 
+#[test]
+fn test_first_time_host_creation_persists_discovered_custom_packages_and_update_respects_ignore() {
+    use mdpkg::sources::load_custom_installed;
+
+    let dir = tempdir().unwrap();
+    let catalog = dir.path().join("packages.md");
+    fs::write(
+        &catalog,
+        "# Packages\n\n## MAIN — Core\n\n### cli\n- c:`sh` — POSIX shell\n",
+    )
+    .unwrap();
+
+    let sh_hooks = dir.path().join("hooks/sh");
+    fs::create_dir_all(&sh_hooks).unwrap();
+    fs::write(
+        sh_hooks.join("install.sh"),
+        "#!/usr/bin/env bash\necho install >> \"$MDPKG_DATA_DIR/sh_hook.log\"\n",
+    )
+    .unwrap();
+    fs::write(
+        sh_hooks.join("remove.sh"),
+        "#!/usr/bin/env bash\necho remove >> \"$MDPKG_DATA_DIR/sh_hook.log\"\n",
+    )
+    .unwrap();
+    fs::write(
+        sh_hooks.join("update.sh"),
+        "#!/usr/bin/env bash\necho \"update:$MDPKG_SOURCE\" >> \"$MDPKG_DATA_DIR/sh_hook.log\"\n",
+    )
+    .unwrap();
+
+    let mut backend = MockSystemBackend::default();
+
+    // 1. First-time `mdpkg sync` discovers `sh` via `command -v`, creates `box1.md` with `- [x] c:`sh``,
+    //    and persists `sh` in `.mdpkg/installed_custom_box1.json`.
+    let cli_sync = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "sync",
+        "--no-confirm",
+    ])
+    .unwrap();
+    execute_command(cli_sync, &mut backend).unwrap();
+
+    let host_content = fs::read_to_string(dir.path().join("box1.md")).unwrap();
+    assert!(host_content.contains("- [x] c:`sh` — POSIX shell"));
+    let persisted = load_custom_installed(dir.path(), "box1");
+    assert!(
+        persisted.contains("sh"),
+        "Expected 'sh' to be persisted in installed_custom_box1.json"
+    );
+
+    // 2. Subsequent `mdpkg check --strict` succeeds with 0 drift!
+    let cli_check = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "check",
+        "--strict",
+    ])
+    .unwrap();
+    execute_command(cli_check, &mut backend).unwrap();
+
+    // 3. `mdpkg update --no-confirm` executes `hooks/sh/update.sh`
+    let log_path = dir.path().join("sh_hook.log");
+    assert!(!log_path.exists());
+    let cli_update = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "update",
+        "--no-confirm",
+    ])
+    .unwrap();
+    execute_command(cli_update, &mut backend).unwrap();
+    assert_eq!(fs::read_to_string(&log_path).unwrap(), "update:custom\n");
+
+    // 4. `mdpkg update --no-confirm --ignore sh` skips `hooks/sh/update.sh`
+    let cli_update_ignore = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "update",
+        "--no-confirm",
+        "--ignore",
+        "sh",
+    ])
+    .unwrap();
+    execute_command(cli_update_ignore, &mut backend).unwrap();
+    assert_eq!(fs::read_to_string(&log_path).unwrap(), "update:custom\n");
+
+    // 5. `mdpkg hooks run sh update` resolves source `custom` from `packages.md`
+    let cli_hooks_run = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "hooks",
+        "run",
+        "sh",
+        "update",
+    ])
+    .unwrap();
+    execute_command(cli_hooks_run, &mut backend).unwrap();
+    assert_eq!(
+        fs::read_to_string(&log_path).unwrap(),
+        "update:custom\nupdate:custom\n"
+    );
+}
+
+

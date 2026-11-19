@@ -323,6 +323,13 @@ impl SystemBackend for RealSystemBackend {
         if dry_run {
             return Ok(());
         }
+        if !command_exists("pamac") {
+            eprintln!(
+                "Warning: pamac is not available on this system; skipping AUR package(s): {}",
+                pkgs.join(" ")
+            );
+            return Ok(());
+        }
         let mut cmd = Command::new("pamac");
         cmd.arg("build");
         if no_confirm {
@@ -400,6 +407,13 @@ impl SystemBackend for RealSystemBackend {
         }
         println!("Removing repo/AUR packages: {}", pkgs.join(" "));
         if dry_run {
+            return Ok(());
+        }
+        if !command_exists("pamac") && !command_exists("pacman") {
+            eprintln!(
+                "Warning: neither pamac nor pacman is available on this system; skipping repo/AUR removal for: {}",
+                pkgs.join(" ")
+            );
             return Ok(());
         }
         let forced = std::env::var("MDPKG_BACKEND").ok();
@@ -503,6 +517,12 @@ impl SystemBackend for RealSystemBackend {
             _ => "pamac",
         };
 
+        let non_empty_ignore: Vec<&str> = ignore
+            .iter()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+
         match backend_choice {
             "pamac" => {
                 println!("==> Step 1: Cleaning AUR build files...");
@@ -516,8 +536,8 @@ impl SystemBackend for RealSystemBackend {
                 if no_confirm {
                     cmd.arg("--no-confirm");
                 }
-                if !ignore.is_empty() {
-                    cmd.arg("--ignore").arg(ignore.join(","));
+                if !non_empty_ignore.is_empty() {
+                    cmd.arg("--ignore").arg(non_empty_ignore.join(","));
                 }
                 let status = cmd.status()?;
                 if !status.success() {
@@ -538,8 +558,8 @@ impl SystemBackend for RealSystemBackend {
                 if no_confirm {
                     cmd.arg("--noconfirm");
                 }
-                if !ignore.is_empty() {
-                    cmd.arg("--ignore").arg(ignore.join(","));
+                if !non_empty_ignore.is_empty() {
+                    cmd.arg("--ignore").arg(non_empty_ignore.join(","));
                 }
                 let status = cmd.status()?;
                 if !status.success() {
@@ -553,10 +573,39 @@ impl SystemBackend for RealSystemBackend {
                     anyhow::bail!("apt update failed with status: {}", status);
                 }
 
-                if !ignore.is_empty() {
+                let pkgs_to_hold = if !non_empty_ignore.is_empty() {
+                    let installed_apt = Command::new("dpkg-query")
+                        .args(["-W", "-f=${Package}\t${db:Status-Abbrev}\n"])
+                        .output()
+                        .ok()
+                        .filter(|o| o.status.success())
+                        .map(|o| parse_dpkg_query_output(&String::from_utf8_lossy(&o.stdout)))
+                        .unwrap_or_default();
+
+                    let already_held: HashSet<String> = Command::new("apt-mark")
+                        .arg("showhold")
+                        .output()
+                        .ok()
+                        .filter(|o| o.status.success())
+                        .map(|o| {
+                            String::from_utf8_lossy(&o.stdout)
+                                .lines()
+                                .map(|l| l.trim())
+                                .filter(|l| !l.is_empty())
+                                .map(|l| l.to_string())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    filter_apt_packages_to_hold(ignore, &installed_apt, &already_held)
+                } else {
+                    Vec::new()
+                };
+
+                if !pkgs_to_hold.is_empty() {
                     let hold_status = privileged_command("apt-mark")
                         .arg("hold")
-                        .args(ignore)
+                        .args(&pkgs_to_hold)
                         .status()?;
                     if !hold_status.success() {
                         anyhow::bail!("apt-mark hold failed with status: {}", hold_status);
@@ -580,10 +629,10 @@ impl SystemBackend for RealSystemBackend {
                 }
                 let upgrade_res = upgrade_cmd.status();
 
-                if !ignore.is_empty() {
+                if !pkgs_to_hold.is_empty() {
                     let _ = privileged_command("apt-mark")
                         .arg("unhold")
-                        .args(ignore)
+                        .args(&pkgs_to_hold)
                         .status();
                 }
 
@@ -636,6 +685,26 @@ impl SystemBackend for RealSystemBackend {
 
         Ok(())
     }
+}
+
+pub fn filter_apt_packages_to_hold(
+    ignore: &[String],
+    installed_apt: &HashSet<String>,
+    already_held: &HashSet<String>,
+) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+    for pkg in ignore {
+        let trimmed = pkg.trim();
+        if !trimmed.is_empty()
+            && installed_apt.contains(trimmed)
+            && !already_held.contains(trimmed)
+            && seen.insert(trimmed.to_string())
+        {
+            result.push(trimmed.to_string());
+        }
+    }
+    result
 }
 
 pub fn parse_dpkg_query_output(output: &str) -> HashSet<String> {
@@ -1057,6 +1126,25 @@ mod tests {
         assert!(parsed.contains("jq"));
         assert!(parsed.contains("curl"));
         assert!(!parsed.contains("tree"));
+    }
+
+    #[test]
+    fn filter_apt_packages_to_hold_excludes_non_apt_already_held_and_empty() {
+        let installed_apt: HashSet<String> =
+            ["jq", "curl", "docker-ce"].into_iter().map(String::from).collect();
+        let already_held: HashSet<String> = ["docker-ce"].into_iter().map(String::from).collect();
+        let ignore = vec![
+            "".to_string(),
+            "   ".to_string(),
+            "rustup".to_string(),     // custom / not in installed_apt
+            "docker-ce".to_string(),  // already held by user
+            "jq".to_string(),         // installed unheld APT package
+            "jq".to_string(),         // duplicate
+            "curl".to_string(),       // installed unheld APT package
+        ];
+
+        let to_hold = filter_apt_packages_to_hold(&ignore, &installed_apt, &already_held);
+        assert_eq!(to_hold, vec!["jq".to_string(), "curl".to_string()]);
     }
 
     #[test]

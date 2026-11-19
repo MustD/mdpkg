@@ -14,7 +14,8 @@ use crate::markdown::{
 use crate::model::{Document, HookStage, PackageItem, PackageSource};
 use crate::reconcile::{compute_sync_plan, reconcile_catalog_to_host, InstalledPackages};
 use crate::sources::{
-    execute_sync_plan, load_custom_installed, update_custom_packages, SystemBackend,
+    execute_sync_plan, load_custom_installed, save_custom_installed, update_custom_packages,
+    SystemBackend,
 };
 use clap::CommandFactory;
 use clap_complete::{generate, Shell};
@@ -181,9 +182,24 @@ fn handle_hooks(cmd: HooksCommand, paths: &ResolvedPaths) -> Result<(), anyhow::
                     )
                 })?;
 
+            let source = if paths.catalog_path.exists() {
+                let content = fs::read_to_string(&paths.catalog_path).unwrap_or_default();
+                let (catalog_doc, _) = parse_document(&paths.catalog_path, &content);
+                catalog_doc
+                    .sections
+                    .iter()
+                    .flat_map(|s| &s.categories)
+                    .flat_map(|c| &c.items)
+                    .find(|i| i.name == package)
+                    .map(|i| i.source)
+                    .unwrap_or(PackageSource::Repo)
+            } else {
+                PackageSource::Repo
+            };
+
             let dummy_item = PackageItem {
                 checked: true,
-                source: PackageSource::Repo,
+                source,
                 explicit_m_prefix: false,
                 name: package.clone(),
                 description: String::new(),
@@ -399,7 +415,14 @@ fn load_host_context(
     })
 }
 
-fn save_host_document(paths: &ResolvedPaths, doc: &Document) -> Result<(), anyhow::Error> {
+fn save_host_document(
+    paths: &ResolvedPaths,
+    doc: &Document,
+    installed: &InstalledPackages,
+) -> Result<(), anyhow::Error> {
+    if !paths.host_path.exists() && !installed.custom.is_empty() {
+        save_custom_installed(&paths.data_dir, &paths.host_name, &installed.custom)?;
+    }
     let rendered = render_document(doc);
     fs::write(&paths.host_path, rendered)?;
     Ok(())
@@ -432,7 +455,7 @@ fn handle_sync(
     }
 
     if !args.dry_run {
-        save_host_document(paths, &ctx.host_doc)?;
+        save_host_document(paths, &ctx.host_doc, &ctx.installed)?;
 
         if !plan.to_install.is_empty() || !plan.to_remove.is_empty() {
             backend.ensure_elevated()?;
@@ -542,18 +565,24 @@ fn handle_add(
         let create_new_label = "+ Create new section...".to_string();
         sec_choices.push(create_new_label);
 
-        let idx = Select::new()
-            .with_prompt("Select target section")
-            .items(&sec_choices)
-            .default(0)
-            .interact()?;
-
-        if idx + 1 == sec_choices.len() {
+        if sec_choices.len() == 1 {
             Input::<String>::new()
                 .with_prompt("New section name")
                 .interact_text()?
         } else {
-            sec_choices[idx].clone()
+            let idx = Select::new()
+                .with_prompt("Select target section")
+                .items(&sec_choices)
+                .default(0)
+                .interact()?;
+
+            if idx + 1 == sec_choices.len() {
+                Input::<String>::new()
+                    .with_prompt("New section name")
+                    .interact_text()?
+            } else {
+                sec_choices[idx].clone()
+            }
         }
     } else if let Some(first_sec) = ctx.catalog_doc.sections.first() {
         first_sec.name.clone()
@@ -578,18 +607,24 @@ fn handle_add(
         let create_new_label = "+ Create new category...".to_string();
         cat_choices.push(create_new_label);
 
-        let idx = Select::new()
-            .with_prompt("Select target category")
-            .items(&cat_choices)
-            .default(0)
-            .interact()?;
-
-        if idx + 1 == cat_choices.len() {
+        if cat_choices.len() == 1 {
             Input::<String>::new()
                 .with_prompt("New category name")
                 .interact_text()?
         } else {
-            cat_choices[idx].clone()
+            let idx = Select::new()
+                .with_prompt("Select target category")
+                .items(&cat_choices)
+                .default(0)
+                .interact()?;
+
+            if idx + 1 == cat_choices.len() {
+                Input::<String>::new()
+                    .with_prompt("New category name")
+                    .interact_text()?
+            } else {
+                cat_choices[idx].clone()
+            }
         }
     } else if let Some(sec) = ctx
         .catalog_doc
@@ -686,7 +721,7 @@ fn handle_add(
     let mut recon =
         reconcile_catalog_to_host(&ctx.catalog_doc, Some(&ctx.host_doc), &ctx.installed);
     set_package_checked(&mut recon.host_doc, &args.package, true);
-    save_host_document(paths, &recon.host_doc)?;
+    save_host_document(paths, &recon.host_doc, &ctx.installed)?;
 
     println!(
         "Package '{}' added and enabled on {}.",
@@ -706,7 +741,7 @@ fn handle_enable(
         anyhow::bail!("Package '{}' not found in catalog", args.package);
     }
 
-    save_host_document(paths, &ctx.host_doc)?;
+    save_host_document(paths, &ctx.host_doc, &ctx.installed)?;
 
     // Install if not already installed
     let plan = compute_sync_plan(&ctx.host_doc, None, &ctx.installed, false)
@@ -750,7 +785,7 @@ fn handle_disable(
         anyhow::bail!("Package '{}' not found in catalog", args.package);
     }
 
-    save_host_document(paths, &ctx.host_doc)?;
+    save_host_document(paths, &ctx.host_doc, &ctx.installed)?;
 
     // Uninstall if currently installed
     let plan = compute_sync_plan(&ctx.host_doc, None, &ctx.installed, false)
