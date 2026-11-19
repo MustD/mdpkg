@@ -504,14 +504,15 @@ mod tests {
     fn pre_install_hook_failure_skips_only_failing_package_and_installs_others() {
         let dir = tempdir().unwrap();
         let hooks_dir = dir.path().join("hooks");
-        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::create_dir_all(hooks_dir.join("badpkg")).unwrap();
+        fs::create_dir_all(hooks_dir.join("goodpkg")).unwrap();
         fs::write(
-            hooks_dir.join("badpkg_preInstall.sh"),
+            hooks_dir.join("badpkg/preInstall.sh"),
             "#!/usr/bin/env bash\nexit 1\n",
         )
         .unwrap();
         fs::write(
-            hooks_dir.join("goodpkg_postInstall.sh"),
+            hooks_dir.join("goodpkg/postInstall.sh"),
             "#!/usr/bin/env bash\necho ok > \"$MDPKG_DATA_DIR/good_post.txt\"\n",
         )
         .unwrap();

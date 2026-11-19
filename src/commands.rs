@@ -15,7 +15,6 @@ use crate::sources::{execute_sync_plan, SystemBackend};
 use clap::CommandFactory;
 use clap_complete::{generate, Shell};
 use dialoguer::{Input, Select};
-use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io::IsTerminal;
@@ -239,18 +238,16 @@ fn handle_check(
         }
     }
 
-    // Collect known packages
-    let mut known_packages = HashSet::new();
+    // Collect catalog items
+    let mut catalog_items: Vec<PackageItem> = Vec::new();
     for sec in &catalog_doc.sections {
         for cat in &sec.categories {
-            for item in &cat.items {
-                known_packages.insert(item.name.clone());
-            }
+            catalog_items.extend(cat.items.iter().cloned());
         }
     }
 
     // Hooks validation
-    let hook_issues = validate_hooks(&paths.hooks_dir, &known_packages)?;
+    let hook_issues = validate_hooks(&paths.hooks_dir, &catalog_items)?;
     if !hook_issues.is_empty() {
         has_syntax_errors = true;
         eprintln!("Hook validation issues:");
