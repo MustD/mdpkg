@@ -361,7 +361,12 @@ fn populate_custom_installed(
                         && !installed.custom.contains(&item.name)
                     {
                         if let Ok(output) = std::process::Command::new("sh")
-                            .args(["-c", "command -v -- \"$1\" >/dev/null 2>&1", "_", &item.name])
+                            .args([
+                                "-c",
+                                "command -v -- \"$1\" >/dev/null 2>&1",
+                                "_",
+                                &item.name,
+                            ])
                             .output()
                         {
                             if output.status.success() {
@@ -597,12 +602,7 @@ fn handle_add(
             .sections
             .iter()
             .find(|s| s.name.eq_ignore_ascii_case(&section))
-            .map(|s| {
-                s.categories
-                    .iter()
-                    .filter_map(|c| c.name.clone())
-                    .collect()
-            })
+            .map(|s| s.categories.iter().filter_map(|c| c.name.clone()).collect())
             .unwrap_or_default();
         let create_new_label = "+ Create new category...".to_string();
         cat_choices.push(create_new_label);

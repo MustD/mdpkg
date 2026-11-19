@@ -432,29 +432,57 @@ fn test_add_rejects_removed_section_and_category_flags_and_supports_apt_and_cust
 
     let dir = tempdir().unwrap();
     let catalog = dir.path().join("packages.md");
-    fs::write(&catalog, "# Packages\n\n## MAIN — Core\n\n### cli\n- `git` — vcs\n").unwrap();
+    fs::write(
+        &catalog,
+        "# Packages\n\n## MAIN — Core\n\n### cli\n- `git` — vcs\n",
+    )
+    .unwrap();
 
     let mut backend = MockSystemBackend::default();
     backend.installed.repo_and_aur.insert("git".to_string());
 
     // 1. Add an APT (d:) package
     let cli_apt = Cli::try_parse_from([
-        "mdpkg", "--dir", dir.path().to_str().unwrap(), "--host", "ubuntu-box",
-        "add", "jq", "--source", "d", "--desc", "JSON processor",
-    ]).unwrap();
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "ubuntu-box",
+        "add",
+        "jq",
+        "--source",
+        "d",
+        "--desc",
+        "JSON processor",
+    ])
+    .unwrap();
     execute_command(cli_apt, &mut backend).unwrap();
     assert_eq!(backend.installed_apt, vec!["jq".to_string()]);
-    assert!(fs::read_to_string(&catalog).unwrap().contains("- d:`jq` — JSON processor"));
+    assert!(fs::read_to_string(&catalog)
+        .unwrap()
+        .contains("- d:`jq` — JSON processor"));
 
     // 2. Add a Custom (c:) package -> scaffolds install.sh and remove.sh in hooks/rustup/
     let cli_custom = Cli::try_parse_from([
-        "mdpkg", "--dir", dir.path().to_str().unwrap(), "--host", "ubuntu-box",
-        "add", "rustup", "--source", "c", "--desc", "Rust toolchain",
-    ]).unwrap();
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "ubuntu-box",
+        "add",
+        "rustup",
+        "--source",
+        "c",
+        "--desc",
+        "Rust toolchain",
+    ])
+    .unwrap();
     execute_command(cli_custom, &mut backend).unwrap();
     assert!(dir.path().join("hooks/rustup/install.sh").exists());
     assert!(dir.path().join("hooks/rustup/remove.sh").exists());
-    assert!(fs::read_to_string(&catalog).unwrap().contains("- c:`rustup` — Rust toolchain"));
+    assert!(fs::read_to_string(&catalog)
+        .unwrap()
+        .contains("- c:`rustup` — Rust toolchain"));
 }
 
 #[test]
@@ -465,19 +493,36 @@ fn test_updates_alias_and_ignore_flag_and_failure_hint() {
 
     let mut backend = MockSystemBackend::default();
     let cli = Cli::try_parse_from([
-        "mdpkg", "--dir", dir.path().to_str().unwrap(),
-        "updates", "--no-confirm", "--ignore", "broken-pkg,another-pkg",
-    ]).unwrap();
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "updates",
+        "--no-confirm",
+        "--ignore",
+        "broken-pkg,another-pkg",
+    ])
+    .unwrap();
     execute_command(cli, &mut backend).unwrap();
-    assert_eq!(backend.ignored_updates, vec!["broken-pkg".to_string(), "another-pkg".to_string()]);
+    assert_eq!(
+        backend.ignored_updates,
+        vec!["broken-pkg".to_string(), "another-pkg".to_string()]
+    );
 
     backend.fail_update = true;
     let cli_fail = Cli::try_parse_from([
-        "mdpkg", "--dir", dir.path().to_str().unwrap(),
-        "update", "--no-confirm",
-    ]).unwrap();
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "update",
+        "--no-confirm",
+    ])
+    .unwrap();
     let err = execute_command(cli_fail, &mut backend).unwrap_err();
-    assert!(err.to_string().contains("--ignore"), "Expected --ignore hint, got: {}", err);
+    assert!(
+        err.to_string().contains("--ignore"),
+        "Expected --ignore hint, got: {}",
+        err
+    );
 }
 
 #[test]
@@ -598,5 +643,3 @@ fn test_first_time_host_creation_persists_discovered_custom_packages_and_update_
         "update:custom\nupdate:custom\n"
     );
 }
-
-

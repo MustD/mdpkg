@@ -1130,17 +1130,19 @@ mod tests {
 
     #[test]
     fn filter_apt_packages_to_hold_excludes_non_apt_already_held_and_empty() {
-        let installed_apt: HashSet<String> =
-            ["jq", "curl", "docker-ce"].into_iter().map(String::from).collect();
+        let installed_apt: HashSet<String> = ["jq", "curl", "docker-ce"]
+            .into_iter()
+            .map(String::from)
+            .collect();
         let already_held: HashSet<String> = ["docker-ce"].into_iter().map(String::from).collect();
         let ignore = vec![
             "".to_string(),
             "   ".to_string(),
-            "rustup".to_string(),     // custom / not in installed_apt
-            "docker-ce".to_string(),  // already held by user
-            "jq".to_string(),         // installed unheld APT package
-            "jq".to_string(),         // duplicate
-            "curl".to_string(),       // installed unheld APT package
+            "rustup".to_string(),    // custom / not in installed_apt
+            "docker-ce".to_string(), // already held by user
+            "jq".to_string(),        // installed unheld APT package
+            "jq".to_string(),        // duplicate
+            "curl".to_string(),      // installed unheld APT package
         ];
 
         let to_hold = filter_apt_packages_to_hold(&ignore, &installed_apt, &already_held);
