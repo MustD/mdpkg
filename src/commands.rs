@@ -415,7 +415,7 @@ fn handle_sync(
 
 fn handle_update(args: UpdateArgs, backend: &mut dyn SystemBackend) -> Result<(), anyhow::Error> {
     backend.ensure_elevated()?;
-    backend.run_system_update(args.no_confirm, args.skip_npm, args.skip_orphans)
+    backend.run_system_update(args.no_confirm, args.skip_npm, args.skip_orphans, &[])
 }
 
 fn handle_add(

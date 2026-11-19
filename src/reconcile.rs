@@ -4,15 +4,18 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, Clone, Default)]
 pub struct InstalledPackages {
     pub repo_and_aur: HashSet<String>,
+    pub apt: HashSet<String>,
     pub npm: HashSet<String>,
+    pub custom: HashSet<String>,
 }
 
 impl InstalledPackages {
     pub fn is_installed(&self, source: PackageSource, name: &str) -> bool {
         match source {
             PackageSource::Repo | PackageSource::Aur => self.repo_and_aur.contains(name),
+            PackageSource::Apt => self.apt.contains(name),
             PackageSource::Npm => self.npm.contains(name),
-            PackageSource::Apt | PackageSource::Custom => false,
+            PackageSource::Custom => self.custom.contains(name),
         }
     }
 }
@@ -289,6 +292,7 @@ mod tests {
         let installed = InstalledPackages {
             repo_and_aur: HashSet::from(["git".to_string(), "ripgrep".to_string()]),
             npm: HashSet::new(),
+            ..Default::default()
         };
 
         let res = reconcile_catalog_to_host(&catalog, Some(&host), &installed);
@@ -317,6 +321,7 @@ mod tests {
         let installed = InstalledPackages {
             repo_and_aur: HashSet::from(["git".to_string(), "insync".to_string()]),
             npm: HashSet::new(),
+            ..Default::default()
         };
 
         let plan = compute_sync_plan(&host, None, &installed, false).unwrap();
@@ -356,6 +361,7 @@ mod tests {
         let installed = InstalledPackages {
             repo_and_aur: HashSet::from(["manjaro-printer".to_string(), "git".to_string()]),
             npm: HashSet::new(),
+            ..Default::default()
         };
 
         // 1. Default sync (all sections evaluated)
@@ -415,5 +421,16 @@ mod tests {
             !res.structure_changed,
             "structure_changed must be false when content matches even if line numbers differ"
         );
+    }
+
+    #[test]
+    fn installed_packages_tracks_apt_and_custom_separately() {
+        let mut inst = InstalledPackages::default();
+        inst.apt.insert("jq".to_string());
+        inst.custom.insert("rustup".to_string());
+
+        assert!(inst.is_installed(PackageSource::Apt, "jq"));
+        assert!(!inst.is_installed(PackageSource::Repo, "jq"));
+        assert!(inst.is_installed(PackageSource::Custom, "rustup"));
     }
 }

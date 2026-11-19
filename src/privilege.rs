@@ -88,6 +88,9 @@ pub(crate) extern "C" fn async_signal_safe_cleanup() {
 }
 
 extern "C" fn cleanup_polkit_rule() {
+    if !std::path::Path::new(POLKIT_RULE_PATH).exists() {
+        return;
+    }
     let _ = Command::new("sudo")
         .args(["-n", "rm", "-f", POLKIT_RULE_PATH])
         .stdout(Stdio::null())
@@ -142,6 +145,14 @@ pub fn resolve_current_username() -> Result<String, anyhow::Error> {
 
 impl PrivilegeSession {
     pub fn acquire() -> Result<Self, anyhow::Error> {
+        if unsafe { libc::geteuid() } == 0 {
+            return Ok(Self {
+                username: "root".to_string(),
+                stop_sender: None,
+                handle: None,
+            });
+        }
+
         // Register signal and exit handlers
         unsafe {
             libc::signal(libc::SIGINT, sigint_handler as *const () as usize);
@@ -161,23 +172,25 @@ impl PrivilegeSession {
         // 2. Determine username
         let username = resolve_current_username()?;
 
-        // 3. Write Polkit rule
-        let rule = polkit_rule_content(&username)?;
-        let mut child = Command::new("sudo")
-            .args(["tee", POLKIT_RULE_PATH])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .spawn()?;
+        // 3. Write Polkit rule if /etc/polkit-1/rules.d exists
+        if std::path::Path::new("/etc/polkit-1/rules.d").exists() {
+            let rule = polkit_rule_content(&username)?;
+            let mut child = Command::new("sudo")
+                .args(["tee", POLKIT_RULE_PATH])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .spawn()?;
 
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(rule.as_bytes())?;
-        }
-        let status = child.wait()?;
-        if !status.success() {
-            eprintln!(
-                "Warning: failed to write polkit session rule at {}",
-                POLKIT_RULE_PATH
-            );
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(rule.as_bytes())?;
+            }
+            let status = child.wait()?;
+            if !status.success() {
+                eprintln!(
+                    "Warning: failed to write polkit session rule at {}",
+                    POLKIT_RULE_PATH
+                );
+            }
         }
 
         // 4. Spawn background keep-alive thread with channel-based wakeup
