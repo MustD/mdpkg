@@ -1,0 +1,5 @@
+FROM manjarolinux/base:latest
+
+ENV MDPKG_NON_INTERACTIVE=1
+
+RUN pacman -Sy --noconfirm

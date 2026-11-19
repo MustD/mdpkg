@@ -4,18 +4,22 @@ use crate::cli::{
     PackageTargetArgs, RemoveArgs, SyncArgs, UpdateArgs,
 };
 use crate::config::{resolve_paths, save_data_dir, ResolvedPaths};
-use crate::hooks::{discover_hooks, init_hooks_dir, run_hook, validate_hooks};
+use crate::hooks::{
+    discover_hooks, init_hooks_dir, run_hook, scaffold_custom_package_scripts, validate_hooks,
+};
 use crate::markdown::{
     insert_package_item, parse_document, remove_package_item, render_catalog_document,
     render_document, set_package_checked, validate_document,
 };
 use crate::model::{Document, HookStage, PackageItem, PackageSource};
 use crate::reconcile::{compute_sync_plan, reconcile_catalog_to_host, InstalledPackages};
-use crate::sources::{execute_sync_plan, SystemBackend};
+use crate::sources::{
+    execute_sync_plan, load_custom_installed, save_custom_installed, update_custom_packages,
+    SystemBackend,
+};
 use clap::CommandFactory;
 use clap_complete::{generate, Shell};
 use dialoguer::{Input, Select};
-use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io::IsTerminal;
@@ -88,7 +92,7 @@ pub fn execute_command(cli: Cli, backend: &mut dyn SystemBackend) -> Result<(), 
         Commands::Hooks(cmd) => handle_hooks(cmd, &paths),
         Commands::Check(args) => handle_check(args, &paths, backend),
         Commands::Sync(args) => handle_sync(args, &paths, backend),
-        Commands::Update(args) => handle_update(args, backend),
+        Commands::Update(args) => handle_update(args, &paths, backend),
         Commands::Add(args) => handle_add(args, &paths, backend),
         Commands::Enable(args) => handle_enable(args, &paths, backend),
         Commands::Disable(args) => handle_disable(args, &paths, backend),
@@ -160,8 +164,12 @@ fn handle_hooks(cmd: HooksCommand, paths: &ResolvedPaths) -> Result<(), anyhow::
             Ok(())
         }
         HooksSubcommand::Run { package, stage } => {
-            let hook_stage = HookStage::from_stage_str(&stage)
-                .ok_or_else(|| anyhow::anyhow!("Invalid hook stage '{}'. Use preInstall, postInstall, preRemoval, or postRemoval", stage))?;
+            let hook_stage = HookStage::from_stage_str(&stage).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid hook stage '{}'. Use preInstall, postInstall, preRemoval, postRemoval, install, remove, or update",
+                    stage
+                )
+            })?;
             let hooks = discover_hooks(&paths.hooks_dir)?;
             let hook = hooks
                 .iter()
@@ -174,9 +182,24 @@ fn handle_hooks(cmd: HooksCommand, paths: &ResolvedPaths) -> Result<(), anyhow::
                     )
                 })?;
 
+            let source = if paths.catalog_path.exists() {
+                let content = fs::read_to_string(&paths.catalog_path).unwrap_or_default();
+                let (catalog_doc, _) = parse_document(&paths.catalog_path, &content);
+                catalog_doc
+                    .sections
+                    .iter()
+                    .flat_map(|s| &s.categories)
+                    .flat_map(|c| &c.items)
+                    .find(|i| i.name == package)
+                    .map(|i| i.source)
+                    .unwrap_or(PackageSource::Repo)
+            } else {
+                PackageSource::Repo
+            };
+
             let dummy_item = PackageItem {
                 checked: true,
-                source: PackageSource::Repo,
+                source,
                 explicit_m_prefix: false,
                 name: package.clone(),
                 description: String::new(),
@@ -239,18 +262,16 @@ fn handle_check(
         }
     }
 
-    // Collect known packages
-    let mut known_packages = HashSet::new();
+    // Collect catalog items
+    let mut catalog_items: Vec<PackageItem> = Vec::new();
     for sec in &catalog_doc.sections {
         for cat in &sec.categories {
-            for item in &cat.items {
-                known_packages.insert(item.name.clone());
-            }
+            catalog_items.extend(cat.items.iter().cloned());
         }
     }
 
     // Hooks validation
-    let hook_issues = validate_hooks(&paths.hooks_dir, &known_packages)?;
+    let hook_issues = validate_hooks(&paths.hooks_dir, &catalog_items)?;
     if !hook_issues.is_empty() {
         has_syntax_errors = true;
         eprintln!("Hook validation issues:");
@@ -264,7 +285,8 @@ fn handle_check(
     }
 
     // Check drift against current host
-    let installed = backend.query_installed()?;
+    let mut installed = backend.query_installed()?;
+    populate_custom_installed(&mut installed, &catalog_doc, paths);
     let host_doc = if paths.host_path.exists() {
         let content = fs::read_to_string(&paths.host_path)?;
         Some(parse_document(&paths.host_path, &content).0)
@@ -323,6 +345,41 @@ fn handle_check(
     Ok(())
 }
 
+fn populate_custom_installed(
+    installed: &mut InstalledPackages,
+    catalog_doc: &Document,
+    paths: &ResolvedPaths,
+) {
+    let tracked = load_custom_installed(&paths.data_dir, &paths.host_name);
+    installed.custom.extend(tracked);
+
+    if !paths.host_path.exists() {
+        for sec in &catalog_doc.sections {
+            for cat in &sec.categories {
+                for item in &cat.items {
+                    if item.source == PackageSource::Custom
+                        && !installed.custom.contains(&item.name)
+                    {
+                        if let Ok(output) = std::process::Command::new("sh")
+                            .args([
+                                "-c",
+                                "command -v -- \"$1\" >/dev/null 2>&1",
+                                "_",
+                                &item.name,
+                            ])
+                            .output()
+                        {
+                            if output.status.success() {
+                                installed.custom.insert(item.name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct HostContext {
     catalog_doc: Document,
     installed: InstalledPackages,
@@ -343,7 +400,8 @@ fn load_host_context(
         anyhow::bail!("Catalog file has syntax errors; run `mdpkg check`");
     }
 
-    let installed = backend.query_installed()?;
+    let mut installed = backend.query_installed()?;
+    populate_custom_installed(&mut installed, &catalog_doc, paths);
 
     let host_doc = if paths.host_path.exists() {
         let content = fs::read_to_string(&paths.host_path)?;
@@ -362,7 +420,14 @@ fn load_host_context(
     })
 }
 
-fn save_host_document(paths: &ResolvedPaths, doc: &Document) -> Result<(), anyhow::Error> {
+fn save_host_document(
+    paths: &ResolvedPaths,
+    doc: &Document,
+    installed: &InstalledPackages,
+) -> Result<(), anyhow::Error> {
+    if !paths.host_path.exists() && !installed.custom.is_empty() {
+        save_custom_installed(&paths.data_dir, &paths.host_name, &installed.custom)?;
+    }
     let rendered = render_document(doc);
     fs::write(&paths.host_path, rendered)?;
     Ok(())
@@ -395,7 +460,7 @@ fn handle_sync(
     }
 
     if !args.dry_run {
-        save_host_document(paths, &ctx.host_doc)?;
+        save_host_document(paths, &ctx.host_doc, &ctx.installed)?;
 
         if !plan.to_install.is_empty() || !plan.to_remove.is_empty() {
             backend.ensure_elevated()?;
@@ -416,9 +481,42 @@ fn handle_sync(
     Ok(())
 }
 
-fn handle_update(args: UpdateArgs, backend: &mut dyn SystemBackend) -> Result<(), anyhow::Error> {
+fn handle_update(
+    args: UpdateArgs,
+    paths: &ResolvedPaths,
+    backend: &mut dyn SystemBackend,
+) -> Result<(), anyhow::Error> {
     backend.ensure_elevated()?;
-    backend.run_system_update(args.no_confirm, args.skip_npm, args.skip_orphans)
+    let map_update_err = |e: anyhow::Error| {
+        anyhow::anyhow!(
+            "{}\nTip: If a specific package failed to update, try running:\n  mdpkg update --ignore <package_name>",
+            e
+        )
+    };
+
+    backend
+        .run_system_update(
+            args.no_confirm,
+            args.skip_npm,
+            args.skip_orphans,
+            &args.ignore,
+        )
+        .map_err(map_update_err)?;
+
+    if paths.catalog_path.exists() {
+        let ctx = load_host_context(paths, backend, false)?;
+        update_custom_packages(
+            &ctx.host_doc,
+            &ctx.installed,
+            &paths.hooks_dir,
+            &paths.host_name,
+            &paths.data_dir,
+            &args.ignore,
+        )
+        .map_err(map_update_err)?;
+    }
+
+    Ok(())
 }
 
 fn handle_add(
@@ -433,13 +531,17 @@ fn handle_add(
         match src {
             CliPackageSource::Repo => PackageSource::Repo,
             CliPackageSource::Aur => PackageSource::Aur,
+            CliPackageSource::Apt => PackageSource::Apt,
             CliPackageSource::Npm => PackageSource::Npm,
+            CliPackageSource::Custom => PackageSource::Custom,
         }
     } else if atty_check() {
         let selections = &[
-            "1. Manjaro Repository (default)",
+            "1. Manjaro Repository (m:)",
             "2. AUR (a:)",
-            "3. Global npm (n:)",
+            "3. APT Ubuntu/Debian (d:)",
+            "4. Global npm (n:)",
+            "5. Custom script (c:)",
         ];
         let idx = Select::new()
             .with_prompt("Select package source")
@@ -449,15 +551,44 @@ fn handle_add(
         match idx {
             0 => PackageSource::Repo,
             1 => PackageSource::Aur,
-            _ => PackageSource::Npm,
+            2 => PackageSource::Apt,
+            3 => PackageSource::Npm,
+            _ => PackageSource::Custom,
         }
     } else {
         PackageSource::Repo
     };
 
     // Resolve section
-    let section = if let Some(sec) = args.section {
-        sec
+    let section = if atty_check() {
+        let mut sec_choices: Vec<String> = ctx
+            .catalog_doc
+            .sections
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
+        let create_new_label = "+ Create new section...".to_string();
+        sec_choices.push(create_new_label);
+
+        if sec_choices.len() == 1 {
+            Input::<String>::new()
+                .with_prompt("New section name")
+                .interact_text()?
+        } else {
+            let idx = Select::new()
+                .with_prompt("Select target section")
+                .items(&sec_choices)
+                .default(0)
+                .interact()?;
+
+            if idx + 1 == sec_choices.len() {
+                Input::<String>::new()
+                    .with_prompt("New section name")
+                    .interact_text()?
+            } else {
+                sec_choices[idx].clone()
+            }
+        }
     } else if let Some(first_sec) = ctx.catalog_doc.sections.first() {
         first_sec.name.clone()
     } else {
@@ -465,8 +596,36 @@ fn handle_add(
     };
 
     // Resolve category
-    let category = if let Some(cat) = args.category {
-        cat
+    let category = if atty_check() {
+        let mut cat_choices: Vec<String> = ctx
+            .catalog_doc
+            .sections
+            .iter()
+            .find(|s| s.name.eq_ignore_ascii_case(&section))
+            .map(|s| s.categories.iter().filter_map(|c| c.name.clone()).collect())
+            .unwrap_or_default();
+        let create_new_label = "+ Create new category...".to_string();
+        cat_choices.push(create_new_label);
+
+        if cat_choices.len() == 1 {
+            Input::<String>::new()
+                .with_prompt("New category name")
+                .interact_text()?
+        } else {
+            let idx = Select::new()
+                .with_prompt("Select target category")
+                .items(&cat_choices)
+                .default(0)
+                .interact()?;
+
+            if idx + 1 == cat_choices.len() {
+                Input::<String>::new()
+                    .with_prompt("New category name")
+                    .interact_text()?
+            } else {
+                cat_choices[idx].clone()
+            }
+        }
     } else if let Some(sec) = ctx
         .catalog_doc
         .sections
@@ -502,8 +661,16 @@ fn handle_add(
         line_no: 0,
     };
 
-    // Install immediately if not --no-install
-    if !args.no_install {
+    if source == PackageSource::Custom {
+        let (inst_path, rem_path) =
+            scaffold_custom_package_scripts(&paths.hooks_dir, &args.package)?;
+        println!(
+            "Scaffolded custom package scripts for '{}':\n  - {}\n  - {}\nFill in these scripts and run `mdpkg sync` to install.",
+            args.package,
+            inst_path.display(),
+            rem_path.display()
+        );
+    } else if !args.no_install {
         backend.ensure_elevated()?;
         let hooks = discover_hooks(&paths.hooks_dir).unwrap_or_default();
         if let Some(h) = hooks
@@ -517,7 +684,9 @@ fn handle_add(
         match item.source {
             PackageSource::Repo => backend.install_repo(&pkg_list, true, false)?,
             PackageSource::Aur => backend.install_aur(&pkg_list, true, false)?,
+            PackageSource::Apt => backend.install_apt(&pkg_list, true, false)?,
             PackageSource::Npm => backend.install_npm(&pkg_list, false)?,
+            PackageSource::Custom => unreachable!(),
         }
 
         if let Some(h) = hooks
@@ -552,7 +721,7 @@ fn handle_add(
     let mut recon =
         reconcile_catalog_to_host(&ctx.catalog_doc, Some(&ctx.host_doc), &ctx.installed);
     set_package_checked(&mut recon.host_doc, &args.package, true);
-    save_host_document(paths, &recon.host_doc)?;
+    save_host_document(paths, &recon.host_doc, &ctx.installed)?;
 
     println!(
         "Package '{}' added and enabled on {}.",
@@ -572,7 +741,7 @@ fn handle_enable(
         anyhow::bail!("Package '{}' not found in catalog", args.package);
     }
 
-    save_host_document(paths, &ctx.host_doc)?;
+    save_host_document(paths, &ctx.host_doc, &ctx.installed)?;
 
     // Install if not already installed
     let plan = compute_sync_plan(&ctx.host_doc, None, &ctx.installed, false)
@@ -616,7 +785,7 @@ fn handle_disable(
         anyhow::bail!("Package '{}' not found in catalog", args.package);
     }
 
-    save_host_document(paths, &ctx.host_doc)?;
+    save_host_document(paths, &ctx.host_doc, &ctx.installed)?;
 
     // Uninstall if currently installed
     let plan = compute_sync_plan(&ctx.host_doc, None, &ctx.installed, false)
@@ -707,11 +876,7 @@ fn handle_list(
                     "(not installed)"
                 };
                 let chk = if item.checked { "[x]" } else { "[ ]" };
-                let src_prefix = match item.source {
-                    PackageSource::Repo => "repo",
-                    PackageSource::Aur => "aur",
-                    PackageSource::Npm => "npm",
-                };
+                let src_prefix = item.source.short_label();
 
                 let attached_hooks: Vec<String> = hooks
                     .iter()

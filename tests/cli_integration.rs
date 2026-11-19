@@ -7,6 +7,7 @@ use tempfile::tempdir;
 
 #[test]
 fn end_to_end_add_check_sync_disable_and_ai_help() {
+    std::env::set_var("MDPKG_NON_INTERACTIVE", "1");
     let dir = tempdir().unwrap();
     let catalog = dir.path().join("packages.md");
     fs::write(
@@ -29,10 +30,6 @@ fn end_to_end_add_check_sync_disable_and_ai_help() {
         "google-chrome",
         "--source",
         "a",
-        "--section",
-        "MAIN",
-        "--category",
-        "cli",
         "--desc",
         "Browser",
     ])
@@ -171,6 +168,7 @@ fn real_world_multi_section_legacy_aur_blockquotes_and_sync() {
 
 #[test]
 fn test_add_existing_package_does_not_duplicate_in_catalog() {
+    std::env::set_var("MDPKG_NON_INTERACTIVE", "1");
     let dir = tempdir().unwrap();
     let catalog = dir.path().join("packages.md");
     fs::write(
@@ -193,10 +191,6 @@ fn test_add_existing_package_does_not_duplicate_in_catalog() {
         "git",
         "--source",
         "repo",
-        "--section",
-        "MAIN",
-        "--category",
-        "cli",
         "--desc",
         "vcs",
     ])
@@ -426,5 +420,226 @@ fn test_section_checkbox_hierarchy_triggers_removal_and_install() {
             "manjaro-printer".to_string(),
             "system-config-printer".to_string()
         ]
+    );
+}
+
+#[test]
+fn test_add_rejects_removed_section_and_category_flags_and_supports_apt_and_custom() {
+    std::env::set_var("MDPKG_NON_INTERACTIVE", "1");
+    // --section and --category must no longer exist on `mdpkg add`
+    assert!(Cli::try_parse_from(["mdpkg", "add", "jq", "--section", "MAIN"]).is_err());
+    assert!(Cli::try_parse_from(["mdpkg", "add", "jq", "--category", "cli"]).is_err());
+
+    let dir = tempdir().unwrap();
+    let catalog = dir.path().join("packages.md");
+    fs::write(
+        &catalog,
+        "# Packages\n\n## MAIN — Core\n\n### cli\n- `git` — vcs\n",
+    )
+    .unwrap();
+
+    let mut backend = MockSystemBackend::default();
+    backend.installed.repo_and_aur.insert("git".to_string());
+
+    // 1. Add an APT (d:) package
+    let cli_apt = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "ubuntu-box",
+        "add",
+        "jq",
+        "--source",
+        "d",
+        "--desc",
+        "JSON processor",
+    ])
+    .unwrap();
+    execute_command(cli_apt, &mut backend).unwrap();
+    assert_eq!(backend.installed_apt, vec!["jq".to_string()]);
+    assert!(fs::read_to_string(&catalog)
+        .unwrap()
+        .contains("- d:`jq` — JSON processor"));
+
+    // 2. Add a Custom (c:) package -> scaffolds install.sh and remove.sh in hooks/rustup/
+    let cli_custom = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "ubuntu-box",
+        "add",
+        "rustup",
+        "--source",
+        "c",
+        "--desc",
+        "Rust toolchain",
+    ])
+    .unwrap();
+    execute_command(cli_custom, &mut backend).unwrap();
+    assert!(dir.path().join("hooks/rustup/install.sh").exists());
+    assert!(dir.path().join("hooks/rustup/remove.sh").exists());
+    assert!(fs::read_to_string(&catalog)
+        .unwrap()
+        .contains("- c:`rustup` — Rust toolchain"));
+}
+
+#[test]
+fn test_updates_alias_and_ignore_flag_and_failure_hint() {
+    let dir = tempdir().unwrap();
+    let catalog = dir.path().join("packages.md");
+    fs::write(&catalog, "# Packages\n\n## MAIN\n\n### cli\n- `git`\n").unwrap();
+
+    let mut backend = MockSystemBackend::default();
+    let cli = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "updates",
+        "--no-confirm",
+        "--ignore",
+        "broken-pkg,another-pkg",
+    ])
+    .unwrap();
+    execute_command(cli, &mut backend).unwrap();
+    assert_eq!(
+        backend.ignored_updates,
+        vec!["broken-pkg".to_string(), "another-pkg".to_string()]
+    );
+
+    backend.fail_update = true;
+    let cli_fail = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "update",
+        "--no-confirm",
+    ])
+    .unwrap();
+    let err = execute_command(cli_fail, &mut backend).unwrap_err();
+    assert!(
+        err.to_string().contains("--ignore"),
+        "Expected --ignore hint, got: {}",
+        err
+    );
+}
+
+#[test]
+fn test_first_time_host_creation_persists_discovered_custom_packages_and_update_respects_ignore() {
+    use mdpkg::sources::load_custom_installed;
+
+    let dir = tempdir().unwrap();
+    let catalog = dir.path().join("packages.md");
+    fs::write(
+        &catalog,
+        "# Packages\n\n## MAIN — Core\n\n### cli\n- c:`sh` — POSIX shell\n",
+    )
+    .unwrap();
+
+    let sh_hooks = dir.path().join("hooks/sh");
+    fs::create_dir_all(&sh_hooks).unwrap();
+    fs::write(
+        sh_hooks.join("install.sh"),
+        "#!/usr/bin/env bash\necho install >> \"$MDPKG_DATA_DIR/sh_hook.log\"\n",
+    )
+    .unwrap();
+    fs::write(
+        sh_hooks.join("remove.sh"),
+        "#!/usr/bin/env bash\necho remove >> \"$MDPKG_DATA_DIR/sh_hook.log\"\n",
+    )
+    .unwrap();
+    fs::write(
+        sh_hooks.join("update.sh"),
+        "#!/usr/bin/env bash\necho \"update:$MDPKG_SOURCE\" >> \"$MDPKG_DATA_DIR/sh_hook.log\"\n",
+    )
+    .unwrap();
+
+    let mut backend = MockSystemBackend::default();
+
+    // 1. First-time `mdpkg sync` discovers `sh` via `command -v`, creates `box1.md` with `- [x] c:`sh``,
+    //    and persists `sh` in `.mdpkg/installed_custom_box1.json`.
+    let cli_sync = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "sync",
+        "--no-confirm",
+    ])
+    .unwrap();
+    execute_command(cli_sync, &mut backend).unwrap();
+
+    let host_content = fs::read_to_string(dir.path().join("box1.md")).unwrap();
+    assert!(host_content.contains("- [x] c:`sh` — POSIX shell"));
+    let persisted = load_custom_installed(dir.path(), "box1");
+    assert!(
+        persisted.contains("sh"),
+        "Expected 'sh' to be persisted in installed_custom_box1.json"
+    );
+
+    // 2. Subsequent `mdpkg check --strict` succeeds with 0 drift!
+    let cli_check = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "check",
+        "--strict",
+    ])
+    .unwrap();
+    execute_command(cli_check, &mut backend).unwrap();
+
+    // 3. `mdpkg update --no-confirm` executes `hooks/sh/update.sh`
+    let log_path = dir.path().join("sh_hook.log");
+    assert!(!log_path.exists());
+    let cli_update = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "update",
+        "--no-confirm",
+    ])
+    .unwrap();
+    execute_command(cli_update, &mut backend).unwrap();
+    assert_eq!(fs::read_to_string(&log_path).unwrap(), "update:custom\n");
+
+    // 4. `mdpkg update --no-confirm --ignore sh` skips `hooks/sh/update.sh`
+    let cli_update_ignore = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "update",
+        "--no-confirm",
+        "--ignore",
+        "sh",
+    ])
+    .unwrap();
+    execute_command(cli_update_ignore, &mut backend).unwrap();
+    assert_eq!(fs::read_to_string(&log_path).unwrap(), "update:custom\n");
+
+    // 5. `mdpkg hooks run sh update` resolves source `custom` from `packages.md`
+    let cli_hooks_run = Cli::try_parse_from([
+        "mdpkg",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--host",
+        "box1",
+        "hooks",
+        "run",
+        "sh",
+        "update",
+    ])
+    .unwrap();
+    execute_command(cli_hooks_run, &mut backend).unwrap();
+    assert_eq!(
+        fs::read_to_string(&log_path).unwrap(),
+        "update:custom\nupdate:custom\n"
     );
 }

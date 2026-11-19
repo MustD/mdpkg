@@ -5,7 +5,9 @@ use std::path::PathBuf;
 pub enum PackageSource {
     Repo,
     Aur,
+    Apt,
     Npm,
+    Custom,
 }
 
 impl PackageSource {
@@ -13,7 +15,19 @@ impl PackageSource {
         match self {
             PackageSource::Repo => "",
             PackageSource::Aur => "a:",
+            PackageSource::Apt => "d:",
             PackageSource::Npm => "n:",
+            PackageSource::Custom => "c:",
+        }
+    }
+
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            PackageSource::Repo => "repo",
+            PackageSource::Aur => "aur",
+            PackageSource::Apt => "apt",
+            PackageSource::Npm => "npm",
+            PackageSource::Custom => "custom",
         }
     }
 
@@ -25,7 +39,9 @@ impl PackageSource {
             None => Ok(PackageSource::Repo),
             Some("m") | Some("manjaro") | Some("repo") => Ok(PackageSource::Repo),
             Some("a") | Some("aur") => Ok(PackageSource::Aur),
+            Some("d") | Some("apt") | Some("debian") | Some("ubuntu") => Ok(PackageSource::Apt),
             Some("n") | Some("npm") => Ok(PackageSource::Npm),
+            Some("c") | Some("custom") => Ok(PackageSource::Custom),
             Some(unknown) => Err(format!("unknown source prefix: '{}:'", unknown)),
         }
     }
@@ -85,6 +101,9 @@ pub enum HookStage {
     PostInstall,
     PreRemoval,
     PostRemoval,
+    Install,
+    Remove,
+    Update,
 }
 
 impl HookStage {
@@ -94,6 +113,9 @@ impl HookStage {
             HookStage::PostInstall => "postInstall",
             HookStage::PreRemoval => "preRemoval",
             HookStage::PostRemoval => "postRemoval",
+            HookStage::Install => "install",
+            HookStage::Remove => "remove",
+            HookStage::Update => "update",
         }
     }
 
@@ -103,6 +125,9 @@ impl HookStage {
             "postInstall" => Some(HookStage::PostInstall),
             "preRemoval" => Some(HookStage::PreRemoval),
             "postRemoval" => Some(HookStage::PostRemoval),
+            "install" => Some(HookStage::Install),
+            "remove" => Some(HookStage::Remove),
+            "update" => Some(HookStage::Update),
             _ => None,
         }
     }
@@ -159,6 +184,66 @@ mod tests {
         );
         assert_eq!(HookStage::try_from("preRemoval"), Ok(HookStage::PreRemoval));
         assert!(HookStage::from_str("invalid").is_err());
+    }
+
+    #[test]
+    fn test_five_package_sources_and_seven_hook_stages() {
+        assert_eq!(
+            PackageSource::from_prefix(None, false),
+            Ok(PackageSource::Repo)
+        );
+        assert_eq!(
+            PackageSource::from_prefix(Some("m"), false),
+            Ok(PackageSource::Repo)
+        );
+        assert_eq!(
+            PackageSource::from_prefix(Some("a"), false),
+            Ok(PackageSource::Aur)
+        );
+        assert_eq!(
+            PackageSource::from_prefix(Some("d"), false),
+            Ok(PackageSource::Apt)
+        );
+        assert_eq!(
+            PackageSource::from_prefix(Some("apt"), false),
+            Ok(PackageSource::Apt)
+        );
+        assert_eq!(
+            PackageSource::from_prefix(Some("debian"), false),
+            Ok(PackageSource::Apt)
+        );
+        assert_eq!(
+            PackageSource::from_prefix(Some("ubuntu"), false),
+            Ok(PackageSource::Apt)
+        );
+        assert_eq!(
+            PackageSource::from_prefix(Some("n"), false),
+            Ok(PackageSource::Npm)
+        );
+        assert_eq!(
+            PackageSource::from_prefix(Some("c"), false),
+            Ok(PackageSource::Custom)
+        );
+        assert_eq!(
+            PackageSource::from_prefix(Some("custom"), false),
+            Ok(PackageSource::Custom)
+        );
+
+        assert_eq!(PackageSource::Apt.prefix_str(), "d:");
+        assert_eq!(PackageSource::Custom.prefix_str(), "c:");
+
+        assert_eq!(PackageSource::Repo.short_label(), "repo");
+        assert_eq!(PackageSource::Aur.short_label(), "aur");
+        assert_eq!(PackageSource::Apt.short_label(), "apt");
+        assert_eq!(PackageSource::Npm.short_label(), "npm");
+        assert_eq!(PackageSource::Custom.short_label(), "custom");
+
+        assert_eq!(HookStage::from_str("install"), Ok(HookStage::Install));
+        assert_eq!(HookStage::from_str("remove"), Ok(HookStage::Remove));
+        assert_eq!(HookStage::from_str("update"), Ok(HookStage::Update));
+        assert_eq!(HookStage::Install.as_str(), "install");
+        assert_eq!(HookStage::Remove.as_str(), "remove");
+        assert_eq!(HookStage::Update.as_str(), "update");
     }
 }
 

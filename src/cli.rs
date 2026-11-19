@@ -49,8 +49,12 @@ pub enum CliPackageSource {
     Repo,
     #[value(name = "a", alias = "aur")]
     Aur,
+    #[value(name = "d", alias = "apt", alias = "debian", alias = "ubuntu")]
+    Apt,
     #[value(name = "n", alias = "npm")]
     Npm,
+    #[value(name = "c", alias = "custom")]
+    Custom,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -63,17 +67,18 @@ installed or removed, executes lifecycle hooks, and applies package manager tran
     Sync(SyncArgs),
 
     #[command(
+        visible_alias = "updates",
         about = "Perform unattended full system update with single password prompt",
         long_about = "Acquires sudo and Polkit credentials upfront, clears AUR build caches,\n\
-upgrades official repos and AUR packages via pamac, cleans orphans, and updates global npm packages."
+upgrades official repos, AUR, APT, custom, and global npm packages, and cleans orphans."
     )]
     Update(UpdateArgs),
 
     #[command(
         about = "Add a new package to the catalog and enable it on the current host",
         long_about = "Adds a package to packages.md and <hostname>.md, and installs it immediately\n\
-unless --no-install is specified. If --source, --section, or --category are omitted in an interactive\n\
-terminal, prompts interactively."
+unless --no-install is specified (or scaffolds install.sh/remove.sh for custom c: packages).\n\
+In an interactive terminal, prompts for source, section, category, and description."
     )]
     Add(AddArgs),
 
@@ -176,6 +181,13 @@ pub struct UpdateArgs {
 
     #[arg(long, help = "Skip removing orphan packages")]
     pub skip_orphans: bool,
+
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Ignore specific package(s) during update"
+    )]
+    pub ignore: Vec<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -187,15 +199,9 @@ pub struct AddArgs {
         short,
         long,
         value_enum,
-        help = "Package source (m/repo, a/aur, n/npm)"
+        help = "Package source (m/repo, a/aur, d/apt, n/npm, c/custom)"
     )]
     pub source: Option<CliPackageSource>,
-
-    #[arg(long, help = "Target section name (e.g. MAIN)")]
-    pub section: Option<String>,
-
-    #[arg(long, help = "Target category name (e.g. cli)")]
-    pub category: Option<String>,
 
     #[arg(long, help = "Short package description")]
     pub desc: Option<String>,
@@ -283,8 +289,8 @@ pub enum HooksSubcommand {
         #[arg(help = "Package name")]
         package: String,
         #[arg(
-            value_parser = ["preInstall", "postInstall", "preRemoval", "postRemoval"],
-            help = "Hook stage (preInstall, postInstall, preRemoval, postRemoval)"
+            value_parser = ["preInstall", "postInstall", "preRemoval", "postRemoval", "install", "remove", "update"],
+            help = "Hook stage (preInstall, postInstall, preRemoval, postRemoval, install, remove, update)"
         )]
         stage: String,
     },
@@ -327,11 +333,16 @@ pub fn render_ai_help(paths: &ResolvedPaths) -> String {
 3. Source prefixes before the package backtick:
    - No prefix or `m:` -> Manjaro repository package
    - `a:` (or legacy `Ⓐ`) -> AUR package (normalized to `a:`)
+   - `d:` -> Ubuntu/Debian APT package
    - `n:` -> Global npm package
+   - `c:` -> Custom script-managed package (`hooks/<pkg>/install.sh`, `remove.sh`, optional `update.sh`)
+4. Hooks directory structure (`hooks/<pkg>/<stage>.sh`):
+   - Standard lifecycle stages: `preInstall`, `postInstall`, `preRemoval`, `postRemoval`
+   - Custom package (`c:`) stages: `install`, `remove`, `update`
 
 ## Non-Interactive CLI Commands for Agents
 - Add package:
-  `mdpkg add <pkg> --source repo|aur|npm --section <SEC> --category <CAT> --desc "<DESC>"`
+  `mdpkg add <pkg> --source m|a|d|n|c --desc "<DESC>"`
 - Enable package:
   `mdpkg enable <pkg>`
 - Disable package:
@@ -340,8 +351,9 @@ pub fn render_ai_help(paths: &ResolvedPaths) -> String {
   `mdpkg sync --no-confirm`
 - Inspect status without mutations:
   `mdpkg check`
-- Full system update:
+- Full system update (or skip specific packages with `--ignore`):
   `mdpkg update --no-confirm`
+  `mdpkg update --no-confirm --ignore <pkg1>,<pkg2>`
 - Generate shell completions:
   `mdpkg completions <bash|zsh|fish|elvish|powershell>`
 "#,
