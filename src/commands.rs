@@ -345,7 +345,7 @@ fn populate_custom_installed(
                         && !installed.custom.contains(&item.name)
                     {
                         if let Ok(output) = std::process::Command::new("sh")
-                            .args(["-c", &format!("command -v {}", item.name)])
+                            .args(["-c", "command -v -- \"$1\" >/dev/null 2>&1", "_", &item.name])
                             .output()
                         {
                             if output.status.success() {
@@ -867,10 +867,7 @@ fn handle_list(
 }
 
 fn atty_check() -> bool {
-    if cfg!(test)
-        || env::var("MDPKG_NON_INTERACTIVE").is_ok()
-        || env::var_os("CARGO_MANIFEST_DIR").is_some()
-    {
+    if cfg!(test) || env::var("MDPKG_NON_INTERACTIVE").is_ok() {
         return false;
     }
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()

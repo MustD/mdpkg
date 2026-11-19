@@ -7,6 +7,7 @@ use tempfile::tempdir;
 
 #[test]
 fn end_to_end_add_check_sync_disable_and_ai_help() {
+    std::env::set_var("MDPKG_NON_INTERACTIVE", "1");
     let dir = tempdir().unwrap();
     let catalog = dir.path().join("packages.md");
     fs::write(
@@ -167,6 +168,7 @@ fn real_world_multi_section_legacy_aur_blockquotes_and_sync() {
 
 #[test]
 fn test_add_existing_package_does_not_duplicate_in_catalog() {
+    std::env::set_var("MDPKG_NON_INTERACTIVE", "1");
     let dir = tempdir().unwrap();
     let catalog = dir.path().join("packages.md");
     fs::write(
@@ -423,6 +425,7 @@ fn test_section_checkbox_hierarchy_triggers_removal_and_install() {
 
 #[test]
 fn test_add_rejects_removed_section_and_category_flags_and_supports_apt_and_custom() {
+    std::env::set_var("MDPKG_NON_INTERACTIVE", "1");
     // --section and --category must no longer exist on `mdpkg add`
     assert!(Cli::try_parse_from(["mdpkg", "add", "jq", "--section", "MAIN"]).is_err());
     assert!(Cli::try_parse_from(["mdpkg", "add", "jq", "--category", "cli"]).is_err());
